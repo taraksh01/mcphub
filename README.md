@@ -134,8 +134,9 @@ mcphub add gh_grep --url https://mcp.grep.app
 
 ## Config file location
 
-- `~/.config/mcphub/config.json` (Linux)
-- `~/Library/Application Support/mcphub/config.json` (macOS)
+- Linux: `~/.config/mcphub/config.json`
+- macOS: `~/Library/Application Support/mcphub/config.json`
+- Windows: `%APPDATA%\mcphub\config.json`
 
 Override with `--config`:
 

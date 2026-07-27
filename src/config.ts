@@ -8,18 +8,15 @@ const DEFAULT_CONFIG: HubConfig = {
 };
 
 function defaultConfigPath(): string {
-  const xdg = process.env.XDG_CONFIG_HOME || join(process.env.HOME!, ".config");
-  const newPath = join(xdg, "mcphub", "config.json");
-  const oldPath = join(process.env.HOME!, "dev/mcp-hub/config.json");
-  try {
-    readFileSync(newPath);
-  } catch {
-    try {
-      readFileSync(oldPath);
-      return oldPath;
-    } catch {}
+  let base: string;
+  if (process.platform === "win32") {
+    base = process.env.APPDATA || join(process.env.USERPROFILE!, "AppData", "Roaming");
+  } else if (process.platform === "darwin") {
+    base = join(process.env.HOME!, "Library", "Application Support");
+  } else {
+    base = process.env.XDG_CONFIG_HOME || join(process.env.HOME!, ".config");
   }
-  return newPath;
+  return join(base, "mcphub", "config.json");
 }
 
 export class ConfigManager {
