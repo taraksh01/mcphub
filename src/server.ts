@@ -63,18 +63,27 @@ export class McpHubServer {
     this.httpServer = http.createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
         if (req.method === "POST" && req.url === "/mcp") {
-          const chunks: Buffer[] = [];
-          for await (const chunk of req) {
-            chunks.push(chunk);
-          }
-          const body = Buffer.concat(chunks).toString("utf-8");
-          const parsed = JSON.parse(body);
+          try {
+            const chunks: Buffer[] = [];
+            for await (const chunk of req) {
+              chunks.push(chunk);
+            }
+            const body = Buffer.concat(chunks).toString("utf-8");
+            const parsed = JSON.parse(body);
 
-          await transport.handleRequest(
-            req as Parameters<typeof transport.handleRequest>[0],
-            res,
-            parsed
-          );
+            await transport.handleRequest(
+              req as Parameters<typeof transport.handleRequest>[0],
+              res,
+              parsed
+            );
+          } catch (e) {
+            const msg = e instanceof Error ? e.stack || e.message : String(e);
+            console.error("MCP request error:", msg);
+            if (!res.headersSent) {
+              res.writeHead(500, { "Content-Type": "text/plain" });
+              res.end(msg);
+            }
+          }
         } else {
           res.writeHead(405, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Method not allowed" }));

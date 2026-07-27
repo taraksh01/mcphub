@@ -46,7 +46,7 @@ program
         stdio: "ignore",
       });
       child.unref();
-      writePid();
+      writeFileSync(PID_FILE, String(child.pid));
       console.log(`Hub started as daemon (PID: ${child.pid})`);
       process.exit(0);
     }
