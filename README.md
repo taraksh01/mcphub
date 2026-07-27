@@ -5,7 +5,7 @@
 Instead of configuring every CLI (OpenCode, Claude Code, Cursor, Zed, Pi) with its own MCP server setup, run one hub and point them all at a single URL.
 
 ```sh
-npm install -g mcphub
+npm install -g @taraksh011/mcphub
 mcphub add my-server --stdio "npx -y some-mcp-server"
 mcphub start
 ```
@@ -15,13 +15,13 @@ All tools from all servers appear under `http://localhost:5431/mcp`.
 ## Install
 
 ```sh
-npm install -g mcphub
+npm install -g @taraksh011/mcphub
 ```
 
 Or use directly without installing:
 
 ```sh
-npx mcphub <command>
+npx @taraksh011/mcphub <command>
 ```
 
 ## Quick start

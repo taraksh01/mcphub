@@ -1,5 +1,5 @@
 {
-  "name": "mcphub",
+  "name": "@taraksh011/mcphub",
   "version": "1.0.0",
   "description": "Single MCP gateway — one endpoint for all your AI coding CLIs",
   "bin": {
