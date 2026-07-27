@@ -56,6 +56,7 @@ const SYSTEMD_PATH = "/etc/systemd/system/mcphub.service";
 function installLinux(config: ConfigManager): void {
   const args = serviceArgs(config);
   const user = process.env.USER || "root";
+  const path = process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
   const unit = `[Unit]
 Description=MCP Hub
 After=network.target
@@ -63,6 +64,7 @@ After=network.target
 [Service]
 Type=simple
 User=${user}
+Environment=PATH=${path}
 ExecStart=${args.join(" ")}
 Restart=on-failure
 RestartSec=5
@@ -72,33 +74,46 @@ WantedBy=multi-user.target
 `;
   try {
     writeFileSync(SYSTEMD_PATH, unit);
-    execSync("systemctl daemon-reload", { stdio: "inherit" });
-    execSync("systemctl enable mcphub", { stdio: "inherit" });
-    console.log("Service installed. Start with: systemctl start mcphub");
   } catch {
-    console.log("Could not write to /etc/systemd/system/. To install manually:\n");
-    console.log(`  sudo tee ${SYSTEMD_PATH} > /dev/null << 'EOF'`);
-    console.log(unit);
-    console.log("EOF");
-    console.log("  sudo systemctl daemon-reload");
-    console.log("  sudo systemctl enable mcphub");
-    console.log("  sudo systemctl start mcphub");
+    const tmp = "/tmp/mcphub.service";
+    writeFileSync(tmp, unit);
+    try {
+      execSync(`sudo cp ${tmp} ${SYSTEMD_PATH}`, { stdio: "inherit" });
+    } catch {
+      console.log("Could not write to /etc/systemd/system/. To install manually:\n");
+      console.log(`  sudo cp ${tmp} ${SYSTEMD_PATH}`);
+      console.log("  sudo systemctl daemon-reload");
+      console.log("  sudo systemctl enable mcphub");
+      console.log("  sudo systemctl start mcphub");
+      return;
+    } finally {
+      try { unlinkSync(tmp); } catch { /* ignore */ }
+    }
+  }
+  try {
+    execSync("sudo systemctl daemon-reload", { stdio: "inherit" });
+    execSync("sudo systemctl enable mcphub", { stdio: "inherit" });
+    execSync("sudo systemctl start mcphub", { stdio: "inherit" });
+    console.log("Service installed and started");
+  } catch (e) {
+    console.log("Service file written but failed to enable:", String(e));
+    console.log("Run: sudo systemctl daemon-reload && sudo systemctl enable mcphub");
   }
 }
 
 function uninstallLinux(): void {
   try {
-    execSync("systemctl stop mcphub 2>/dev/null", { stdio: "ignore" });
-    execSync("systemctl disable mcphub 2>/dev/null", { stdio: "ignore" });
-    unlinkSync(SYSTEMD_PATH);
-    execSync("systemctl daemon-reload", { stdio: "inherit" });
+    execSync("sudo systemctl stop mcphub 2>/dev/null", { stdio: "ignore" });
+    execSync("sudo systemctl disable mcphub 2>/dev/null", { stdio: "ignore" });
+    try {
+      unlinkSync(SYSTEMD_PATH);
+    } catch {
+      execSync(`sudo rm ${SYSTEMD_PATH}`, { stdio: "inherit" });
+    }
+    execSync("sudo systemctl daemon-reload", { stdio: "inherit" });
     console.log("Service removed");
   } catch {
-    if (existsSync(SYSTEMD_PATH)) {
-      console.log(`Remove manually: sudo rm ${SYSTEMD_PATH} && sudo systemctl daemon-reload`);
-    } else {
-      console.log("Service not installed");
-    }
+    console.log("Service not installed or could not be removed");
   }
 }
 

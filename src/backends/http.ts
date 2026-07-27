@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { McpServerConfig, IBackend } from "../types.js";
+import { VERSION } from "../version.js";
 
 export class HttpBackend implements IBackend {
   private client: Client;
@@ -10,7 +11,7 @@ export class HttpBackend implements IBackend {
     private config: McpServerConfig
   ) {
     this.client = new Client(
-      { name: `mcphub-${name}`, version: "1.0.0" },
+      { name: `mcphub-${name}`, version: VERSION },
       { capabilities: {} }
     );
   }

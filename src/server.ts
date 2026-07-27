@@ -6,11 +6,12 @@ import {
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { McpClientManager } from "./backends/manager.js";
 import { ToolAggregator } from "./tools.js";
+import { VERSION } from "./version.js";
 import type { IncomingMessage, ServerResponse } from "http";
 
 function createMcpServer(aggregator: ToolAggregator): Server {
   const server = new Server(
-    { name: "mcphub", version: "1.0.0" },
+    { name: "mcphub", version: VERSION },
     { capabilities: { tools: {} } }
   );
 

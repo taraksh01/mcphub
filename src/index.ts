@@ -6,6 +6,7 @@ import { ConfigManager } from "./config.js";
 import { McpClientManager } from "./backends/manager.js";
 import { ToolAggregator } from "./tools.js";
 import { McphubServer } from "./server.js";
+import { VERSION } from "./version.js";
 import { installService, uninstallService } from "./service.js";
 
 let config: ConfigManager;
@@ -35,7 +36,7 @@ const program = new Command();
 program
   .name("mcphub")
   .description("mcphub — single gateway for all MCP servers")
-  .version("1.1.0")
+  .version(VERSION)
   .option("-c, --config <path>", "Config file path");
 
 program
