@@ -16,12 +16,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/taraksh01/mcp-hub.git"
+    "url": "git+https://github.com/taraksh01/mcphub.git"
   },
   "bugs": {
-    "url": "https://github.com/taraksh01/mcp-hub/issues"
+    "url": "https://github.com/taraksh01/mcphub/issues"
   },
-  "homepage": "https://github.com/taraksh01/mcp-hub#readme",
+  "homepage": "https://github.com/taraksh01/mcphub#readme",
   "engines": {
     "node": ">=18"
   },

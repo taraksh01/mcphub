@@ -5,7 +5,7 @@ import { dirname, join } from "path";
 import { ConfigManager } from "./config.js";
 import { McpClientManager } from "./backends/manager.js";
 import { ToolAggregator } from "./tools.js";
-import { McpHubServer } from "./server.js";
+import { McphubServer } from "./server.js";
 
 let config: ConfigManager;
 
@@ -32,7 +32,7 @@ const program = new Command();
 
 program
   .name("mcphub")
-  .description("MCP Hub — single gateway for all MCP servers")
+  .description("mcphub — single gateway for all MCP servers")
   .version("1.0.0")
   .option("-c, --config <path>", "Config file path");
 
@@ -62,7 +62,7 @@ program
     await manager.connectAll(cfg.mcpServers);
 
     const aggregator = new ToolAggregator(manager);
-    const server = new McpHubServer(manager, aggregator);
+    const server = new McphubServer(manager, aggregator);
     await server.start(port);
 
     writePid();

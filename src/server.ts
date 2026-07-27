@@ -10,7 +10,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 
 function createMcpServer(aggregator: ToolAggregator): Server {
   const server = new Server(
-    { name: "mcp-hub", version: "1.0.0" },
+    { name: "mcphub", version: "1.0.0" },
     { capabilities: { tools: {} } }
   );
 
@@ -46,7 +46,7 @@ function createMcpServer(aggregator: ToolAggregator): Server {
   return server;
 }
 
-export class McpHubServer {
+export class McphubServer {
   private httpServer: import("http").Server | null = null;
 
   constructor(

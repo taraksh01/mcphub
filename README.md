@@ -2,7 +2,7 @@
 
 **Single MCP gateway for all your AI coding CLIs.**
 
-Instead of configuring every CLI (OpenCode, Claude Code, Cursor, Zed, Pi) with its own MCP server config, run one hub and point them all at a single URL.
+Instead of configuring every CLI (OpenCode, Claude Code, Cursor, Zed, Pi) with its own MCP server setup, run one hub and point them all at a single URL.
 
 ```sh
 npm install -g mcphub
