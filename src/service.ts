@@ -18,6 +18,7 @@ function serviceArgs(config: ConfigManager): string[] {
   const cfg = config.get();
   const port = cfg.port ?? 5431;
   const args = [nodeBin(), scriptPath(), "start", "--port", String(port)];
+  args.push("--config", config.getConfigPath());
   return args;
 }
 

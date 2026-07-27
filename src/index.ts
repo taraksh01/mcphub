@@ -48,11 +48,15 @@ program
     config = new ConfigManager(program.opts().config);
     const cfg = config.get();
     const port = options.port ?? cfg.port ?? 5431;
+    if (typeof port !== "number" || isNaN(port)) {
+      console.error("Invalid port number");
+      process.exit(1);
+    }
 
     if (options.daemon) {
       const { fork } = await import("child_process");
       const args = ["start", "--port", String(port)];
-      const cfgPath = program.opts().config;
+      const cfgPath = program.opts().config || process.env.MCPHUB_CONFIG;
       if (cfgPath) args.push("--config", cfgPath);
       const child = fork(process.argv[1], args, {
         detached: true,
