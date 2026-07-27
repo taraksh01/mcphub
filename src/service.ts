@@ -50,8 +50,6 @@ export function uninstallService(config: ConfigManager): void {
   }
 }
 
-// ─── Linux (systemd) ──────────────────────────────────────────────
-
 const SYSTEMD_PATH = "/etc/systemd/system/mcphub.service";
 
 function installLinux(config: ConfigManager): void {
@@ -88,7 +86,7 @@ WantedBy=multi-user.target
       console.log("  sudo systemctl start mcphub");
       return;
     } finally {
-      try { unlinkSync(tmp); } catch { /* ignore */ }
+      try { unlinkSync(tmp); } catch {}
     }
   }
   try {
@@ -117,8 +115,6 @@ function uninstallLinux(): void {
     console.log("Service not installed or could not be removed");
   }
 }
-
-// ─── macOS (launchd) ──────────────────────────────────────────────
 
 const LAUNCHD_PATH = join(homedir(), "Library/LaunchAgents", `${LABEL}.plist`);
 
@@ -159,8 +155,6 @@ function uninstallMacOS(): void {
   unlinkSync(LAUNCHD_PATH);
   console.log("Service removed");
 }
-
-// ─── Windows (scheduled task) ─────────────────────────────────────
 
 const TASK_NAME = "MCPHub";
 

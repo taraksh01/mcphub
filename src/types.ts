@@ -11,14 +11,6 @@ export interface HubConfig {
   mcpServers: Record<string, McpServerConfig>;
 }
 
-export interface ServerStatus {
-  name: string;
-  type: "stdio" | "http";
-  status: "connected" | "disconnected" | "error";
-  error?: string;
-  tools: number;
-}
-
 export interface IBackend {
   getName(): string;
   getType(): "stdio" | "http";

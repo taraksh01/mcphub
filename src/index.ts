@@ -23,7 +23,8 @@ function writePid(): void {
 function readPid(): number | null {
   const file = pidFile();
   if (!existsSync(file)) return null;
-  return parseInt(readFileSync(file, "utf-8"));
+  const pid = parseInt(readFileSync(file, "utf-8"), 10);
+  return isNaN(pid) ? null : pid;
 }
 
 function removePid(): void {
@@ -48,8 +49,8 @@ program
     config = new ConfigManager(program.opts().config);
     const cfg = config.get();
     const port = options.port ?? cfg.port ?? 5431;
-    if (typeof port !== "number" || isNaN(port)) {
-      console.error("Invalid port number");
+    if (typeof port !== "number" || isNaN(port) || port < 1 || port > 65535) {
+      console.error("Port must be a number between 1 and 65535");
       process.exit(1);
     }
 
@@ -70,33 +71,30 @@ program
     }
 
     const manager = new McpClientManager();
-    await manager.connectAll(cfg.mcpServers);
-
     const aggregator = new ToolAggregator(manager);
-    const server = new McphubServer(manager, aggregator);
+    const server = new McphubServer(aggregator);
+
+    const shutdown = async () => {
+      console.log("\nShutting down...");
+      config.stopWatching();
+      removePid();
+      await manager.disconnectAll();
+      await server.stop();
+      process.exit(0);
+    };
+
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+
+    await manager.connectAll(cfg.mcpServers);
     await server.start(port);
 
     writePid();
 
     config.startWatching(async (newConfig) => {
-      console.log("\nConfig changed, reconnecting backends...");
-      await manager.disconnectAll();
-      await manager.connectAll(newConfig.mcpServers);
-    });
-
-    process.on("SIGINT", async () => {
-      console.log("\nShutting down...");
-      config.stopWatching();
-      removePid();
-      await server.stop();
-      process.exit(0);
-    });
-
-    process.on("SIGTERM", async () => {
-      config.stopWatching();
-      removePid();
-      await server.stop();
-      process.exit(0);
+      console.log("\nConfig changed, syncing backends...");
+      await manager.syncConfig(cfg.mcpServers, newConfig.mcpServers);
+      cfg.mcpServers = newConfig.mcpServers;
     });
   });
 
@@ -112,9 +110,16 @@ program
     }
     try {
       process.kill(pid, "SIGTERM");
-      await new Promise(r => setTimeout(r, 2000));
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 200));
+        try { process.kill(pid, 0); } catch {
+          removePid();
+          console.log(`Hub stopped (PID: ${pid})`);
+          return;
+        }
+      }
+      console.error("Hub did not stop within 4s, force removing PID");
       removePid();
-      console.log(`Hub stopped (PID: ${pid})`);
     } catch {
       removePid();
       console.log("Hub process not found, cleaned up PID file");
@@ -129,16 +134,11 @@ program
   .option("-e, --env <env...>", "Environment variables (KEY=VALUE)")
   .action((name, options) => {
     config = new ConfigManager(program.opts().config);
-    if (!options.stdio && !options.url) {
-      console.error("Specify --stdio or --url");
-      process.exit(1);
-    }
-
     const env: Record<string, string> = {};
     if (options.env) {
       for (const e of options.env) {
         const idx = e.indexOf("=");
-        if (idx === -1) {
+        if (idx <= 0) {
           console.error(`Invalid env format: "${e}". Use KEY=VALUE`);
           process.exit(1);
         }
@@ -146,19 +146,37 @@ program
       }
     }
 
-    if (options.stdio) {
-      const parts = options.stdio.split(" ");
+    if (options.stdio !== undefined && options.url !== undefined) {
+      console.error("Specify only one of --stdio or --url");
+      process.exit(1);
+    }
+
+    if (options.stdio !== undefined) {
+      const parts = options.stdio.trim().split(/\s+/);
+      if (!parts[0]) {
+        console.error("Command cannot be empty");
+        process.exit(1);
+      }
       config.updateServer(name, {
         type: "stdio",
         command: parts[0],
         args: parts.slice(1),
         env: Object.keys(env).length > 0 ? env : undefined,
       });
-    } else {
+    } else if (options.url !== undefined) {
+      try {
+        new URL(options.url);
+      } catch {
+        console.error(`Invalid URL: "${options.url}"`);
+        process.exit(1);
+      }
       config.updateServer(name, {
         type: "http",
         url: options.url,
       });
+    } else {
+      console.error("Specify --stdio or --url");
+      process.exit(1);
     }
 
     console.log(`Added server: ${name}`);

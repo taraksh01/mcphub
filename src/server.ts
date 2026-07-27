@@ -4,7 +4,6 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { McpClientManager } from "./backends/manager.js";
 import { ToolAggregator } from "./tools.js";
 import { VERSION } from "./version.js";
 import type { IncomingMessage, ServerResponse } from "http";
@@ -51,7 +50,6 @@ export class McphubServer {
   private httpServer: import("http").Server | null = null;
 
   constructor(
-    private manager: McpClientManager,
     private aggregator: ToolAggregator
   ) {}
 

@@ -1,4 +1,4 @@
-import { McpServerConfig, IBackend, ServerStatus } from "../types.js";
+import { McpServerConfig, IBackend } from "../types.js";
 import { StdioBackend } from "./stdio.js";
 import { HttpBackend } from "./http.js";
 
@@ -33,62 +33,47 @@ export class McpClientManager {
     for (const backend of this.backends.values()) {
       try {
         await backend.disconnect();
-      } catch {
-        // ignore disconnect errors
-      }
+      } catch {}
     }
     this.backends.clear();
     this.failures.clear();
-  }
-
-  async reconnect(name: string, config: McpServerConfig): Promise<void> {
-    const existing = this.backends.get(name);
-    if (existing) {
-      try { await existing.disconnect(); } catch { /* ignore */ }
-      this.backends.delete(name);
-    }
-
-    const backend = this.createBackend(name, config);
-    try {
-      await backend.connect();
-      this.backends.set(name, backend);
-      this.failures.delete(name);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      this.failures.set(name, { type: config.type, error: msg });
-      throw e;
-    }
   }
 
   private createBackend(name: string, config: McpServerConfig): IBackend {
     if (config.type === "http") {
       return new HttpBackend(name, config);
     }
+    if (config.type !== "stdio") {
+      throw new Error(`Invalid type "${config.type}" for backend "${name}". Use "stdio" or "http"`);
+    }
     return new StdioBackend(name, config);
   }
 
-  getStatus(): ServerStatus[] {
-    const statuses: ServerStatus[] = [];
-    for (const [name, backend] of this.backends) {
-      statuses.push({
-        name,
-        type: backend.getType(),
-        status: "connected",
-        tools: 0,
-      });
-    }
-    for (const [name, failure] of this.failures) {
-      if (!this.backends.has(name)) {
-        statuses.push({
-          name,
-          type: failure.type,
-          status: "error",
-          error: failure.error,
-          tools: 0,
-        });
+  async syncConfig(oldServers: Record<string, McpServerConfig>, newServers: Record<string, McpServerConfig>): Promise<void> {
+    const allNames = new Set([...Object.keys(oldServers), ...Object.keys(newServers)]);
+    for (const name of allNames) {
+      const oldServer = oldServers[name];
+      const newServer = newServers[name];
+      if (!newServer) {
+        const b = this.backends.get(name);
+        if (b) { try { await b.disconnect(); } catch {} this.backends.delete(name); this.failures.delete(name); }
+        continue;
+      }
+      if (oldServer && JSON.stringify(oldServer) === JSON.stringify(newServer)) continue;
+      const existing = this.backends.get(name);
+      if (existing) { try { await existing.disconnect(); } catch {} this.backends.delete(name); }
+      try {
+        const backend = this.createBackend(name, newServer);
+        await backend.connect();
+        this.backends.set(name, backend);
+        this.failures.delete(name);
+        console.log(`Reconnected backend "${name}"`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.failures.set(name, { type: newServer.type, error: msg });
+        console.error(`Failed to connect backend "${name}":`, msg);
       }
     }
-    return statuses;
   }
 
   getBackend(name: string): IBackend | undefined {

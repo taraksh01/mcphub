@@ -34,7 +34,10 @@ export class ConfigManager {
     try {
       const raw = readFileSync(this.configPath, "utf-8");
       return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
-    } catch {
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        console.error("Config file has invalid JSON, using defaults");
+      }
       return { ...DEFAULT_CONFIG };
     }
   }
