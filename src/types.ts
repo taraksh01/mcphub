@@ -1,0 +1,28 @@
+export interface McpServerConfig {
+  type: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+}
+
+export interface HubConfig {
+  port: number;
+  mcpServers: Record<string, McpServerConfig>;
+}
+
+export interface ServerStatus {
+  name: string;
+  type: "stdio" | "http";
+  status: "connected" | "disconnected" | "error";
+  error?: string;
+  tools: number;
+}
+
+export interface IBackend {
+  getName(): string;
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  getTools(): Promise<{ name: string; description?: string; inputSchema?: Record<string, unknown> }[]>;
+  callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
+}

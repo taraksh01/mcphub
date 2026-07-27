@@ -1,0 +1,25 @@
+{
+  "name": "mcp-hub",
+  "version": "1.0.0",
+  "description": "Single gateway for all MCP servers — one endpoint for all your AI coding CLIs",
+  "bin": {
+    "mcp-hub": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": ["mcp", "model-context-protocol", "hub", "gateway"],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "commander": "^15.0.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2"
+  }
+}
