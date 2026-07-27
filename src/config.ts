@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, watch } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
+import { dirname, join } from "path";
 import { HubConfig, McpServerConfig } from "./types.js";
 
 const DEFAULT_CONFIG: HubConfig = {
@@ -7,23 +7,35 @@ const DEFAULT_CONFIG: HubConfig = {
   mcpServers: {},
 };
 
-const CONFIG_PATH = join(
-  process.env.HOME!,
-  "dev/mcp-hub/config.json"
-);
+function defaultConfigPath(): string {
+  const xdg = process.env.XDG_CONFIG_HOME || join(process.env.HOME!, ".config");
+  const newPath = join(xdg, "mcphub", "config.json");
+  const oldPath = join(process.env.HOME!, "dev/mcp-hub/config.json");
+  try {
+    readFileSync(newPath);
+  } catch {
+    try {
+      readFileSync(oldPath);
+      return oldPath;
+    } catch {}
+  }
+  return newPath;
+}
 
 export class ConfigManager {
   private config: HubConfig;
+  private configPath: string;
   private watcher: ReturnType<typeof watch> | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor() {
+  constructor(configPath?: string) {
+    this.configPath = configPath || process.env.MCPHUB_CONFIG || defaultConfigPath();
     this.config = this.load();
   }
 
   private load(): HubConfig {
     try {
-      const raw = readFileSync(CONFIG_PATH, "utf-8");
+      const raw = readFileSync(this.configPath, "utf-8");
       return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
     } catch {
       return { ...DEFAULT_CONFIG };
@@ -35,7 +47,8 @@ export class ConfigManager {
   }
 
   save(): void {
-    writeFileSync(CONFIG_PATH, JSON.stringify(this.config, null, 2));
+    mkdirSync(dirname(this.configPath), { recursive: true });
+    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
   }
 
   updateServer(name: string, server: McpServerConfig): void {
@@ -49,11 +62,11 @@ export class ConfigManager {
   }
 
   getConfigPath(): string {
-    return CONFIG_PATH;
+    return this.configPath;
   }
 
   startWatching(callback: (config: HubConfig) => void): void {
-    this.watcher = watch(CONFIG_PATH, () => {
+    this.watcher = watch(this.configPath, () => {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {
         this.config = this.load();

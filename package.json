@@ -1,17 +1,30 @@
 {
-  "name": "mcp-hub",
+  "name": "mcphub",
   "version": "1.0.0",
-  "description": "Single gateway for all MCP servers — one endpoint for all your AI coding CLIs",
+  "description": "Single MCP gateway — one endpoint for all your AI coding CLIs",
   "bin": {
-    "mcp-hub": "dist/index.js"
+    "mcphub": "dist/index.js"
   },
+  "files": ["dist/"],
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "start": "node dist/index.js"
   },
-  "keywords": ["mcp", "model-context-protocol", "hub", "gateway"],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["mcp", "model-context-protocol", "hub", "gateway", "opencode", "claude"],
+  "author": "Tarak Shaw",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taraksh01/mcp-hub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/taraksh01/mcp-hub/issues"
+  },
+  "homepage": "https://github.com/taraksh01/mcp-hub#readme",
+  "engines": {
+    "node": ">=18"
+  },
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

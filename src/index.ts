@@ -1,34 +1,40 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { existsSync, writeFileSync, readFileSync, unlinkSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { ConfigManager } from "./config.js";
 import { McpClientManager } from "./backends/manager.js";
 import { ToolAggregator } from "./tools.js";
 import { McpHubServer } from "./server.js";
 
-const program = new Command();
-const config = new ConfigManager();
+let config: ConfigManager;
 
-const PID_FILE = join(process.env.HOME!, "dev/mcp-hub/hub.pid");
+function pidFile(): string {
+  return join(dirname(config.getConfigPath()), "hub.pid");
+}
 
 function writePid(): void {
-  writeFileSync(PID_FILE, process.pid.toString());
+  writeFileSync(pidFile(), process.pid.toString());
 }
 
 function readPid(): number | null {
-  if (!existsSync(PID_FILE)) return null;
-  return parseInt(readFileSync(PID_FILE, "utf-8"));
+  const file = pidFile();
+  if (!existsSync(file)) return null;
+  return parseInt(readFileSync(file, "utf-8"));
 }
 
 function removePid(): void {
-  if (existsSync(PID_FILE)) unlinkSync(PID_FILE);
+  const file = pidFile();
+  if (existsSync(file)) unlinkSync(file);
 }
 
+const program = new Command();
+
 program
-  .name("mcp-hub")
-  .description("MCP Hub - single gateway for all MCP servers")
-  .version("1.0.0");
+  .name("mcphub")
+  .description("MCP Hub — single gateway for all MCP servers")
+  .version("1.0.0")
+  .option("-c, --config <path>", "Config file path");
 
 program
   .command("start")
@@ -36,6 +42,7 @@ program
   .option("-p, --port <port>", "Port number", parseInt)
   .option("-d, --daemon", "Run as daemon")
   .action(async (options) => {
+    config = new ConfigManager(program.opts().config);
     const cfg = config.get();
     const port = options.port ?? cfg.port ?? 5431;
 
@@ -46,7 +53,7 @@ program
         stdio: "ignore",
       });
       child.unref();
-      writeFileSync(PID_FILE, String(child.pid));
+      writeFileSync(pidFile(), String(child.pid));
       console.log(`Hub started as daemon (PID: ${child.pid})`);
       process.exit(0);
     }
@@ -86,6 +93,7 @@ program
   .command("stop")
   .description("Stop the hub daemon")
   .action(() => {
+    config = new ConfigManager(program.opts().config);
     const pid = readPid();
     if (!pid) {
       console.log("Hub not running");
@@ -108,6 +116,7 @@ program
   .option("--url <url>", "URL for HTTP server")
   .option("-e, --env <env...>", "Environment variables (KEY=VALUE)")
   .action((name, options) => {
+    config = new ConfigManager(program.opts().config);
     if (!options.stdio && !options.url) {
       console.error("Specify --stdio or --url");
       process.exit(1);
@@ -147,6 +156,7 @@ program
   .command("remove <name>")
   .description("Remove a server")
   .action((name) => {
+    config = new ConfigManager(program.opts().config);
     config.removeServer(name);
     console.log(`Removed server: ${name}`);
   });
@@ -155,6 +165,7 @@ program
   .command("list")
   .description("List configured servers")
   .action(() => {
+    config = new ConfigManager(program.opts().config);
     const cfg = config.get();
     const entries = Object.entries(cfg.mcpServers);
     if (entries.length === 0) {
@@ -175,6 +186,7 @@ program
   .command("status")
   .description("Show hub status")
   .action(() => {
+    config = new ConfigManager(program.opts().config);
     const pid = readPid();
     if (!pid) {
       console.log("Hub not running");
@@ -194,6 +206,7 @@ program
   .command("config")
   .description("Show config path")
   .action(() => {
+    config = new ConfigManager(program.opts().config);
     console.log(config.getConfigPath());
   });
 
