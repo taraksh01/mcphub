@@ -6,6 +6,7 @@ import { ConfigManager } from "./config.js";
 import { McpClientManager } from "./backends/manager.js";
 import { ToolAggregator } from "./tools.js";
 import { McphubServer } from "./server.js";
+import { installService, uninstallService } from "./service.js";
 
 let config: ConfigManager;
 
@@ -34,7 +35,7 @@ const program = new Command();
 program
   .name("mcphub")
   .description("mcphub — single gateway for all MCP servers")
-  .version("1.0.0")
+  .version("1.1.0")
   .option("-c, --config <path>", "Config file path");
 
 program
@@ -226,6 +227,22 @@ program
   .action(() => {
     config = new ConfigManager(program.opts().config);
     console.log(config.getConfigPath());
+  });
+
+program
+  .command("install-service")
+  .description("Install as a boot-time service (systemd/launchd/schtasks)")
+  .action(() => {
+    config = new ConfigManager(program.opts().config);
+    installService(config);
+  });
+
+program
+  .command("uninstall-service")
+  .description("Remove the boot-time service")
+  .action(() => {
+    config = new ConfigManager(program.opts().config);
+    uninstallService(config);
   });
 
 program.parse();

@@ -48,6 +48,12 @@ mcphub stop
 
 # Show config path
 mcphub config
+
+# Install as a boot-time service (starts on system boot)
+mcphub install-service
+
+# Remove the boot-time service
+mcphub uninstall-service
 ```
 
 The hub listens on `http://localhost:5431/mcp` by default. Override with `--port`:
@@ -169,5 +175,8 @@ Commands:
   list                    List configured servers
   status                  Show hub status (PID, port, servers)
   config                  Show config path
+  install-service         Install as a boot-time service
+                          (systemd/launchd/schtasks)
+  uninstall-service       Remove the boot-time service
   help [command]          display help for command
 ```
