@@ -40,6 +40,9 @@ mcphub start
 # Or run as a daemon
 mcphub start --daemon
 
+# Show hub status (PID, port, configured servers)
+mcphub status
+
 # Stop the daemon
 mcphub stop
 
@@ -52,6 +55,8 @@ The hub listens on `http://localhost:5431/mcp` by default. Override with `--port
 ```sh
 mcphub start --port 8080
 ```
+
+Health check at `GET /health` returns `{ "status": "ok" }`.
 
 ## Configure your CLIs
 
@@ -162,7 +167,7 @@ Commands:
   add [options] <name>    Add a server
   remove <name>           Remove a server
   list                    List configured servers
-  status                  Show hub status
+  status                  Show hub status (PID, port, servers)
   config                  Show config path
   help [command]          display help for command
 ```

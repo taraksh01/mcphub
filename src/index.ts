@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { existsSync, writeFileSync, readFileSync, unlinkSync } from "fs";
+import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import { ConfigManager } from "./config.js";
 import { McpClientManager } from "./backends/manager.js";
@@ -14,6 +14,7 @@ function pidFile(): string {
 }
 
 function writePid(): void {
+  mkdirSync(dirname(pidFile()), { recursive: true });
   writeFileSync(pidFile(), process.pid.toString());
 }
 
@@ -48,11 +49,15 @@ program
 
     if (options.daemon) {
       const { fork } = await import("child_process");
-      const child = fork(process.argv[1], ["start", "--port", String(port)], {
+      const args = ["start", "--port", String(port)];
+      const cfgPath = program.opts().config;
+      if (cfgPath) args.push("--config", cfgPath);
+      const child = fork(process.argv[1], args, {
         detached: true,
         stdio: "ignore",
       });
       child.unref();
+      mkdirSync(dirname(pidFile()), { recursive: true });
       writeFileSync(pidFile(), String(child.pid));
       console.log(`Hub started as daemon (PID: ${child.pid})`);
       process.exit(0);
@@ -92,7 +97,7 @@ program
 program
   .command("stop")
   .description("Stop the hub daemon")
-  .action(() => {
+  .action(async () => {
     config = new ConfigManager(program.opts().config);
     const pid = readPid();
     if (!pid) {
@@ -101,6 +106,7 @@ program
     }
     try {
       process.kill(pid, "SIGTERM");
+      await new Promise(r => setTimeout(r, 2000));
       removePid();
       console.log(`Hub stopped (PID: ${pid})`);
     } catch {
@@ -199,6 +205,18 @@ program
       process.kill(pid, 0);
     } catch {
       console.log("(Process not found, stale PID file)");
+    }
+    const entries = Object.entries(config.get().mcpServers);
+    if (entries.length > 0) {
+      console.log(`Servers (${entries.length}):`);
+      for (const [name, server] of entries) {
+        if (server.type === "stdio") {
+          const envNote = server.env ? " (with env vars)" : "";
+          console.log(`  ${name}: stdio — ${server.command} ${(server.args ?? []).join(" ")}${envNote}`);
+        } else {
+          console.log(`  ${name}: http — ${server.url}`);
+        }
+      }
     }
   });
 

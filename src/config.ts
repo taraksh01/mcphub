@@ -63,6 +63,7 @@ export class ConfigManager {
   }
 
   startWatching(callback: (config: HubConfig) => void): void {
+    this.save();
     this.watcher = watch(this.configPath, () => {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {

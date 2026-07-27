@@ -4,20 +4,23 @@ import { McpServerConfig, IBackend } from "../types.js";
 
 export class StdioBackend implements IBackend {
   private client: Client;
-  private transport: StdioClientTransport | null = null;
 
   constructor(
     private name: string,
     private config: McpServerConfig
   ) {
     this.client = new Client(
-      { name: `mcp-hub-${name}`, version: "1.0.0" },
+      { name: `mcphub-${name}`, version: "1.0.0" },
       { capabilities: {} }
     );
   }
 
   getName(): string {
     return this.name;
+  }
+
+  getType(): "stdio" {
+    return "stdio";
   }
 
   async connect(): Promise<void> {
@@ -30,13 +33,11 @@ export class StdioBackend implements IBackend {
     }
     Object.assign(env, this.config.env);
 
-    this.transport = new StdioClientTransport({
+    await this.client.connect(new StdioClientTransport({
       command: this.config.command,
       args: this.config.args || [],
       env,
-    });
-
-    await this.client.connect(this.transport);
+    }));
   }
 
   async disconnect(): Promise<void> {

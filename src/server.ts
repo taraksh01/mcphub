@@ -58,6 +58,12 @@ export class McphubServer {
     const http = await import("http");
     this.httpServer = http.createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === "GET" && req.url === "/health") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ status: "ok" }));
+          return;
+        }
+
         if (req.method === "POST" && req.url === "/mcp") {
           try {
             const chunks: Buffer[] = [];
@@ -99,8 +105,19 @@ export class McphubServer {
   }
 
   async stop(): Promise<void> {
-    if (this.httpServer) {
-      this.httpServer.close();
-    }
+    if (!this.httpServer) return;
+
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        console.warn("Shutdown timeout, forcing exit");
+        this.httpServer!.closeAllConnections();
+        resolve();
+      }, 5000);
+
+      this.httpServer!.close(() => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
   }
 }
