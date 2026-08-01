@@ -4,6 +4,7 @@ export interface McpServerConfig {
   args?: string[];
   env?: Record<string, string>;
   url?: string;
+  cwd?: string;
 }
 
 export interface HubConfig {
