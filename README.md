@@ -34,6 +34,9 @@ mcphub add github --stdio "npx -y @modelcontextprotocol/server-github"
 # List configured servers
 mcphub list
 
+# Authenticate an OAuth-protected HTTP server (opens browser for consent)
+mcphub auth cloudflare
+
 # Start the hub (foreground)
 mcphub start
 
@@ -143,6 +146,21 @@ mcphub add my-tools --stdio "npx -y @some/mcp-server" -e API_KEY=abc -e DEBUG=tr
 mcphub add gh_grep --url https://mcp.grep.app
 ```
 
+## OAuth-protected HTTP servers
+
+Some remote MCP servers (e.g. Cloudflare) require OAuth. Authenticate once — the hub stores the tokens and refreshes them automatically on reconnect:
+
+```sh
+mcphub add cloudflare --url https://mcp.cloudflare.com/mcp
+mcphub auth cloudflare
+```
+
+The flow: RFC 9728 discovery → dynamic client registration → browser consent on `http://localhost:8765/callback` → tokens saved to `~/.config/mcphub/tokens/<name>.json` (access + refresh token).
+
+## Shell environment variables
+
+API keys defined in your shell rc files work under systemd too. `mcphub` loads `export KEY=VALUE` lines from `~/.bashrc`, `~/.zshrc`, and `~/.profile` at startup — variables already set in the environment take precedence.
+
 ## Config file location
 
 - Linux: `~/.config/mcphub/config.json`
@@ -174,6 +192,7 @@ Commands:
   remove <name>           Remove a server
   list                    List configured servers
   status                  Show hub status (PID, port, servers)
+  auth <name>             Authenticate an OAuth-protected HTTP server
   config                  Show config path
   install-service         Install as a boot-time service
                           (systemd/launchd/schtasks)
