@@ -2,9 +2,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { McpServerConfig, IBackend } from "../types.js";
 import { VERSION } from "../version.js";
+import { OAuthClientProvider } from "../oauth.js";
 
 export class HttpBackend implements IBackend {
   private client: Client;
+  private authProvider: OAuthClientProvider | null = null;
 
   constructor(
     private name: string,
@@ -27,8 +29,12 @@ export class HttpBackend implements IBackend {
   async connect(): Promise<void> {
     if (!this.config.url) throw new Error("No URL specified");
 
+    this.authProvider = new OAuthClientProvider(this.name, this.config.url);
+    const tokens = await this.authProvider.tokens();
+
     await this.client.connect(new StreamableHTTPClientTransport(
-      new URL(this.config.url)
+      new URL(this.config.url),
+      tokens ? { authProvider: this.authProvider } : undefined
     ));
   }
 

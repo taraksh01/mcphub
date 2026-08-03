@@ -9,6 +9,7 @@ import { McphubServer } from "./server.js";
 import { VERSION } from "./version.js";
 import { installService, uninstallService } from "./service.js";
 import { loadShellEnv } from "./shellEnv.js";
+import { OAuthClientProvider } from "./oauth.js";
 
 let config: ConfigManager;
 
@@ -243,6 +244,37 @@ program
           console.log(`  ${name}: http — ${server.url}`);
         }
       }
+    }
+  });
+
+program
+  .command("auth <name>")
+  .description("Authenticate an OAuth-protected HTTP server")
+  .action(async (name) => {
+    config = new ConfigManager(program.opts().config);
+    const cfg = config.get();
+    const server = cfg.mcpServers[name];
+    if (!server || server.type !== "http") {
+      console.error(`Server "${name}" not found or not an HTTP server`);
+      process.exit(1);
+    }
+    if (!server.url) {
+      console.error("Server has no URL");
+      process.exit(1);
+    }
+
+    const provider = new OAuthClientProvider(name, server.url);
+    console.log(`Starting OAuth flow for ${name}...`);
+    try {
+      const tokens = await provider.startAuthFlow();
+      console.log("Authentication successful!");
+      console.log(`Access token: ${tokens.access_token.slice(0, 20)}...`);
+      if (tokens.refresh_token) {
+        console.log("Refresh token stored for auto-renewal");
+      }
+    } catch (e) {
+      console.error("Authentication failed:", String(e));
+      process.exit(1);
     }
   });
 
