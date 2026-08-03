@@ -37,6 +37,7 @@ export class StdioBackend implements IBackend {
     await this.client.connect(new StdioClientTransport({
       command: this.config.command,
       args: this.config.args || [],
+      cwd: this.config.cwd || process.cwd(),
       env,
     }));
   }
