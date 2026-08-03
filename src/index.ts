@@ -8,6 +8,7 @@ import { ToolAggregator } from "./tools.js";
 import { McphubServer } from "./server.js";
 import { VERSION } from "./version.js";
 import { installService, uninstallService } from "./service.js";
+import { loadShellEnv } from "./shellEnv.js";
 
 let config: ConfigManager;
 
@@ -48,6 +49,7 @@ program
   .action(async (options) => {
     config = new ConfigManager(program.opts().config);
     const cfg = config.get();
+    loadShellEnv();
     const port = options.port ?? cfg.port ?? 5431;
     if (typeof port !== "number" || isNaN(port) || port < 1 || port > 65535) {
       console.error("Port must be a number between 1 and 65535");
