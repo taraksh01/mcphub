@@ -34,6 +34,12 @@ mcphub add github --stdio "npx -y @modelcontextprotocol/server-github"
 # List configured servers
 mcphub list
 
+# Disable a server (keeps config, skips it at start)
+mcphub disable some-server
+
+# Re-enable it
+mcphub enable some-server
+
 # Authenticate an OAuth-protected HTTP server (opens browser for consent)
 mcphub auth cloudflare
 
@@ -146,6 +152,8 @@ mcphub add my-tools --stdio "npx -y @some/mcp-server" -e API_KEY=abc -e DEBUG=tr
 mcphub add gh_grep --url https://mcp.grep.app
 ```
 
+Disable a server without removing it by setting `"enabled": false` in the config, or via `mcphub disable <name>` / `mcphub enable <name>`. Disabled servers show a `[disabled]` marker in `mcphub list` and `mcphub status`, and are skipped on start — toggling takes effect immediately if the hub is running.
+
 ## OAuth-protected HTTP servers
 
 Some remote MCP servers (e.g. Cloudflare) require OAuth. Authenticate once — the hub stores the tokens and refreshes them automatically on reconnect:
@@ -193,6 +201,8 @@ Commands:
   list                    List configured servers
   status                  Show hub status (PID, port, servers)
   auth <name>             Authenticate an OAuth-protected HTTP server
+  enable <name>           Enable a server
+  disable <name>          Disable a server (keeps config, skips it at start)
   config                  Show config path
   install-service         Install as a boot-time service
                           (systemd/launchd/schtasks)
