@@ -61,6 +61,14 @@ export class ConfigManager {
     this.save();
   }
 
+  setEnabled(name: string, enabled: boolean): boolean {
+    const server = this.config.mcpServers[name];
+    if (!server) return false;
+    server.enabled = enabled;
+    this.save();
+    return true;
+  }
+
   getConfigPath(): string {
     return this.configPath;
   }

@@ -12,6 +12,10 @@ export class McpClientManager {
 
     const results = await Promise.allSettled(
       entries.map(async ([name, config]) => {
+        if (config.enabled === false) {
+          console.log(`Skipping disabled backend "${name}"`);
+          return;
+        }
         const backend = this.createBackend(name, config);
         await backend.connect();
         this.backends.set(name, backend);
@@ -57,6 +61,12 @@ export class McpClientManager {
       if (!newServer) {
         const b = this.backends.get(name);
         if (b) { try { await b.disconnect(); } catch {} this.backends.delete(name); this.failures.delete(name); }
+        continue;
+      }
+      if (newServer.enabled === false) {
+        const b = this.backends.get(name);
+        if (b) { try { await b.disconnect(); } catch {} this.backends.delete(name); }
+        console.log(`Skipping disabled backend "${name}"`);
         continue;
       }
       if (oldServer && JSON.stringify(oldServer) === JSON.stringify(newServer)) continue;

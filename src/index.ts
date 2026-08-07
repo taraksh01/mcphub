@@ -195,6 +195,30 @@ program
   });
 
 program
+  .command("disable <name>")
+  .description("Disable a server (keeps config, skips it at start)")
+  .action((name) => {
+    config = new ConfigManager(program.opts().config);
+    if (!config.setEnabled(name, false)) {
+      console.error(`Server "${name}" not found`);
+      process.exit(1);
+    }
+    console.log(`Disabled server: ${name}`);
+  });
+
+program
+  .command("enable <name>")
+  .description("Enable a server")
+  .action((name) => {
+    config = new ConfigManager(program.opts().config);
+    if (!config.setEnabled(name, true)) {
+      console.error(`Server "${name}" not found`);
+      process.exit(1);
+    }
+    console.log(`Enabled server: ${name}`);
+  });
+
+program
   .command("list")
   .description("List configured servers")
   .action(() => {
@@ -206,11 +230,12 @@ program
       return;
     }
     for (const [name, server] of entries) {
+      const disabledNote = server.enabled === false ? " [disabled]" : "";
       if (server.type === "stdio") {
         const envNote = server.env ? " (with env vars)" : "";
-        console.log(`${name}: stdio — ${server.command} ${(server.args ?? []).join(" ")}${envNote}`);
+        console.log(`${name}: stdio — ${server.command} ${(server.args ?? []).join(" ")}${envNote}${disabledNote}`);
       } else {
-        console.log(`${name}: http — ${server.url}`);
+        console.log(`${name}: http — ${server.url}${disabledNote}`);
       }
     }
   });
@@ -237,11 +262,12 @@ program
     if (entries.length > 0) {
       console.log(`Servers (${entries.length}):`);
       for (const [name, server] of entries) {
+        const disabledNote = server.enabled === false ? " [disabled]" : "";
         if (server.type === "stdio") {
           const envNote = server.env ? " (with env vars)" : "";
-          console.log(`  ${name}: stdio — ${server.command} ${(server.args ?? []).join(" ")}${envNote}`);
+          console.log(`  ${name}: stdio — ${server.command} ${(server.args ?? []).join(" ")}${envNote}${disabledNote}`);
         } else {
-          console.log(`  ${name}: http — ${server.url}`);
+          console.log(`  ${name}: http — ${server.url}${disabledNote}`);
         }
       }
     }
