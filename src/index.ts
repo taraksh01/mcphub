@@ -195,27 +195,37 @@ program
   });
 
 program
-  .command("disable <name>")
-  .description("Disable a server (keeps config, skips it at start)")
-  .action((name) => {
+  .command("disable <names...>")
+  .description("Disable servers (keeps config, skips them at start)")
+  .action((names: string[]) => {
     config = new ConfigManager(program.opts().config);
-    if (!config.setEnabled(name, false)) {
-      console.error(`Server "${name}" not found`);
-      process.exit(1);
+    let failed = false;
+    for (const name of names) {
+      if (!config.setEnabled(name, false)) {
+        console.error(`Server "${name}" not found`);
+        failed = true;
+      } else {
+        console.log(`Disabled server: ${name}`);
+      }
     }
-    console.log(`Disabled server: ${name}`);
+    if (failed) process.exit(1);
   });
 
 program
-  .command("enable <name>")
-  .description("Enable a server")
-  .action((name) => {
+  .command("enable <names...>")
+  .description("Enable servers")
+  .action((names: string[]) => {
     config = new ConfigManager(program.opts().config);
-    if (!config.setEnabled(name, true)) {
-      console.error(`Server "${name}" not found`);
-      process.exit(1);
+    let failed = false;
+    for (const name of names) {
+      if (!config.setEnabled(name, true)) {
+        console.error(`Server "${name}" not found`);
+        failed = true;
+      } else {
+        console.log(`Enabled server: ${name}`);
+      }
     }
-    console.log(`Enabled server: ${name}`);
+    if (failed) process.exit(1);
   });
 
 program

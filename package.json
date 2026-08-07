@@ -1,6 +1,6 @@
 {
   "name": "@taraksh011/mcphub",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Single MCP gateway — one endpoint for all your AI coding CLIs",
   "bin": {
     "mcphub": "dist/index.js"
