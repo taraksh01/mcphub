@@ -5,6 +5,7 @@ export interface McpServerConfig {
   env?: Record<string, string>;
   url?: string;
   cwd?: string;
+  enabled?: boolean;
 }
 
 export interface HubConfig {
