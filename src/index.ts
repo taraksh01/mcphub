@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync } from "fs";
+import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, openSync } from "fs";
 import { dirname, join } from "path";
 import { ConfigManager } from "./config.js";
 import { McpClientManager } from "./backends/manager.js";
@@ -47,6 +47,7 @@ program
   .command("start")
   .description("Start the MCP Hub")
   .option("-p, --port <port>", "Port number", parseInt)
+  .option("--host <host>", "Host to bind (default 127.0.0.1)")
   .option("-d, --daemon", "Run as daemon")
   .action(async (options) => {
     config = new ConfigManager(program.opts().config);
@@ -57,20 +58,23 @@ program
       console.error("Port must be a number between 1 and 65535");
       process.exit(1);
     }
+    const host = options.host ?? "127.0.0.1";
 
     if (options.daemon) {
       const { fork } = await import("child_process");
-      const args = ["start", "--port", String(port)];
+      const args = ["start", "--port", String(port), "--host", host];
       const cfgPath = program.opts().config || process.env.MCPHUB_CONFIG;
       if (cfgPath) args.push("--config", cfgPath);
+      const logPath = join(dirname(config.getConfigPath()), "hub.log");
+      const logFd = openSync(logPath, "a");
       const child = fork(process.argv[1], args, {
         detached: true,
-        stdio: "ignore",
+        stdio: ["ignore", logFd, logFd],
       });
       child.unref();
       mkdirSync(dirname(pidFile()), { recursive: true });
       writeFileSync(pidFile(), String(child.pid));
-      console.log(`Hub started as daemon (PID: ${child.pid})`);
+      console.log(`Hub started as daemon (PID: ${child.pid}, logs: ${logPath})`);
       process.exit(0);
     }
 
@@ -91,7 +95,7 @@ program
     process.on("SIGTERM", shutdown);
 
     await manager.connectAll(cfg.mcpServers);
-    await server.start(port);
+    await server.start(port, host);
 
     writePid();
 
@@ -114,7 +118,7 @@ program
     }
     try {
       process.kill(pid, "SIGTERM");
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 50; i++) {
         await new Promise(r => setTimeout(r, 200));
         try { process.kill(pid, 0); } catch {
           removePid();
@@ -122,7 +126,7 @@ program
           return;
         }
       }
-      console.error("Hub did not stop within 4s, force removing PID");
+      console.error("Hub did not stop within 10s, force removing PID");
       removePid();
     } catch {
       removePid();
@@ -305,9 +309,12 @@ program
     try {
       const tokens = await provider.startAuthFlow();
       console.log("Authentication successful!");
-      console.log(`Access token: ${tokens.access_token.slice(0, 20)}...`);
+      console.log(`Access token: ${tokens.access_token.slice(0, 4)}...${tokens.access_token.slice(-4)}`);
       if (tokens.refresh_token) {
         console.log("Refresh token stored for auto-renewal");
+      }
+      if (readPid()) {
+        console.log("Restart the hub (mcphub restart) for it to use the new token");
       }
     } catch (e) {
       console.error("Authentication failed:", String(e));
