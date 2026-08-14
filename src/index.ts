@@ -75,7 +75,7 @@ program
 
     const manager = new McpClientManager();
     const aggregator = new ToolAggregator(manager);
-    const server = new McphubServer(aggregator);
+    const server = new McphubServer(aggregator, manager);
 
     const shutdown = async () => {
       console.log("\nShutting down...");

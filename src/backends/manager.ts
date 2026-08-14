@@ -93,4 +93,8 @@ export class McpClientManager {
   getAllBackends(): IBackend[] {
     return Array.from(this.backends.values());
   }
+
+  getFailures(): { name: string; type: "stdio" | "http"; error: string }[] {
+    return Array.from(this.failures.entries()).map(([name, f]) => ({ name, ...f }));
+  }
 }
