@@ -5,6 +5,9 @@ import { HttpBackend } from "./http.js";
 export class McpClientManager {
   private backends: Map<string, IBackend> = new Map();
   private failures: Map<string, { type: "stdio" | "http"; error: string }> = new Map();
+  private retryTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private retryAttempts: Map<string, number> = new Map();
+  private static readonly RETRY_DELAYS_MS = [5000, 10000, 20000];
 
   async connectAll(servers: Record<string, McpServerConfig>): Promise<void> {
     const entries = Object.entries(servers);
@@ -29,11 +32,52 @@ export class McpClientManager {
         const msg = reason instanceof Error ? reason.message : String(reason);
         console.error(`Failed to connect backend "${entries[i][0]}":`, msg);
         this.failures.set(entries[i][0], { type: entries[i][1].type, error: msg });
+        this.scheduleRetry(entries[i][0], entries[i][1]);
       }
     }
   }
 
+  private scheduleRetry(name: string, config: McpServerConfig): void {
+    const attempt = this.retryAttempts.get(name) ?? 0;
+    if (attempt >= McpClientManager.RETRY_DELAYS_MS.length) {
+      this.retryAttempts.delete(name);
+      console.error(`Gave up reconnecting backend "${name}" after ${McpClientManager.RETRY_DELAYS_MS.length} retries`);
+      return;
+    }
+    const delay = McpClientManager.RETRY_DELAYS_MS[attempt];
+    this.retryAttempts.set(name, attempt + 1);
+    console.log(`Backend "${name}" failed, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${McpClientManager.RETRY_DELAYS_MS.length})`);
+    this.retryTimers.set(name, setTimeout(async () => {
+      try {
+        const backend = this.createBackend(name, config);
+        await backend.connect();
+        this.backends.set(name, backend);
+        this.failures.delete(name);
+        this.retryAttempts.delete(name);
+        console.log(`Reconnected backend "${name}"`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`Retry failed for backend "${name}":`, msg);
+        this.scheduleRetry(name, config);
+      }
+    }, delay));
+  }
+
+  private clearRetry(name: string): void {
+    const timer = this.retryTimers.get(name);
+    if (timer) {
+      clearTimeout(timer);
+      this.retryTimers.delete(name);
+    }
+    this.retryAttempts.delete(name);
+  }
+
   async disconnectAll(): Promise<void> {
+    for (const timer of this.retryTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.retryTimers.clear();
+    this.retryAttempts.clear();
     for (const backend of this.backends.values()) {
       try {
         await backend.disconnect();
@@ -59,17 +103,21 @@ export class McpClientManager {
       const oldServer = oldServers[name];
       const newServer = newServers[name];
       if (!newServer) {
+        this.clearRetry(name);
         const b = this.backends.get(name);
         if (b) { try { await b.disconnect(); } catch {} this.backends.delete(name); this.failures.delete(name); }
         continue;
       }
       if (newServer.enabled === false) {
+        this.clearRetry(name);
         const b = this.backends.get(name);
         if (b) { try { await b.disconnect(); } catch {} this.backends.delete(name); }
+        this.failures.delete(name);
         console.log(`Skipping disabled backend "${name}"`);
         continue;
       }
       if (oldServer && JSON.stringify(oldServer) === JSON.stringify(newServer)) continue;
+      this.clearRetry(name);
       const existing = this.backends.get(name);
       if (existing) { try { await existing.disconnect(); } catch {} this.backends.delete(name); }
       try {
@@ -82,6 +130,7 @@ export class McpClientManager {
         const msg = e instanceof Error ? e.message : String(e);
         this.failures.set(name, { type: newServer.type, error: msg });
         console.error(`Failed to connect backend "${name}":`, msg);
+        this.scheduleRetry(name, newServer);
       }
     }
   }
@@ -92,5 +141,9 @@ export class McpClientManager {
 
   getAllBackends(): IBackend[] {
     return Array.from(this.backends.values());
+  }
+
+  getFailures(): { name: string; type: "stdio" | "http"; error: string }[] {
+    return Array.from(this.failures.entries()).map(([name, f]) => ({ name, ...f }));
   }
 }
