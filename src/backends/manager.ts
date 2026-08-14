@@ -66,6 +66,7 @@ export class McpClientManager {
       if (newServer.enabled === false) {
         const b = this.backends.get(name);
         if (b) { try { await b.disconnect(); } catch {} this.backends.delete(name); }
+        this.failures.delete(name);
         console.log(`Skipping disabled backend "${name}"`);
         continue;
       }
