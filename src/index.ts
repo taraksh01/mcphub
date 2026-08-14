@@ -78,6 +78,40 @@ async function startDaemon(port: number, host: string): Promise<void> {
   process.exit(0);
 }
 
+async function listTools(): Promise<void> {
+  config = new ConfigManager(program.opts().config);
+  const cfg = config.get();
+  const manager = new McpClientManager();
+  const aggregator = new ToolAggregator(
+    manager,
+    (name) => cfg.mcpServers[name]?.disabledTools ?? []
+  );
+  try {
+    await manager.connectAll(cfg.mcpServers);
+    const tools = await aggregator.getAllTools(true);
+    const byBackend = new Map<string, typeof tools>();
+    for (const t of tools) {
+      const arr = byBackend.get(t.backend) ?? [];
+      arr.push(t);
+      byBackend.set(t.backend, arr);
+    }
+    let total = 0;
+    for (const [name, server] of Object.entries(cfg.mcpServers)) {
+      if (server.enabled === false) continue;
+      const list = byBackend.get(name) ?? [];
+      const disabledSet = new Set(server.disabledTools ?? []);
+      console.log(`[${name}] (${list.length} tools)`);
+      for (const t of list) {
+        total++;
+        console.log(`  ${t.originalName}${disabledSet.has(t.originalName) ? " [disabled]" : ""}`);
+      }
+    }
+    console.log(`Total: ${total} tools`);
+  } finally {
+    await manager.disconnectAll();
+  }
+}
+
 const program = new Command();
 
 program
@@ -108,7 +142,10 @@ program
     }
 
     const manager = new McpClientManager();
-    const aggregator = new ToolAggregator(manager);
+    const aggregator = new ToolAggregator(
+      manager,
+      (name) => cfg.mcpServers[name]?.disabledTools ?? []
+    );
     const server = new McphubServer(aggregator, manager);
 
     const shutdown = async () => {
@@ -269,6 +306,37 @@ program
       }
     }
     if (failed) process.exit(1);
+  });
+
+const toolsCmd = program
+  .command("tools")
+  .description("List all tools across servers, with disabled state")
+  .action(async () => {
+    await listTools();
+  });
+
+toolsCmd
+  .command("disable <server> <tool>")
+  .description("Disable an individual tool on a server")
+  .action((server: string, tool: string) => {
+    config = new ConfigManager(program.opts().config);
+    if (!config.setToolDisabled(server, tool, true)) {
+      console.error(`Server "${server}" not found`);
+      process.exit(1);
+    }
+    console.log(`Disabled tool: ${server}:${tool}`);
+  });
+
+toolsCmd
+  .command("enable <server> <tool>")
+  .description("Re-enable a disabled tool on a server")
+  .action((server: string, tool: string) => {
+    config = new ConfigManager(program.opts().config);
+    if (!config.setToolDisabled(server, tool, false)) {
+      console.error(`Server "${server}" not found`);
+      process.exit(1);
+    }
+    console.log(`Enabled tool: ${server}:${tool}`);
   });
 
 program
