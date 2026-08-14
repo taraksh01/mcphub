@@ -48,16 +48,28 @@ function createMcpServer(aggregator: ToolAggregator): Server {
   return server;
 }
 
+const MAX_BODY_BYTES = 10 * 1024 * 1024;
+const SESSION_IDLE_TTL_MS = 15 * 60 * 1000;
+const SESSION_SWEEP_INTERVAL_MS = 60 * 1000;
+
+interface SessionEntry {
+  transport: StreamableHTTPServerTransport;
+  server: Server;
+  lastActivity: number;
+  hasOpenStream: boolean;
+}
+
 export class McphubServer {
   private httpServer: import("http").Server | null = null;
-  private sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: Server }>();
+  private sessions = new Map<string, SessionEntry>();
+  private sweepTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private aggregator: ToolAggregator,
     private manager: McpClientManager
   ) {}
 
-  async start(port: number): Promise<void> {
+  async start(port: number, host = "127.0.0.1"): Promise<void> {
     const http = await import("http");
     this.httpServer = http.createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
@@ -82,7 +94,7 @@ export class McphubServer {
               const transport = new StreamableHTTPServerTransport({
                 sessionIdGenerator: () => randomUUID(),
                 onsessioninitialized: (sid) => {
-                  this.sessions.set(sid, { transport, server });
+                  this.sessions.set(sid, { transport, server, lastActivity: Date.now(), hasOpenStream: false });
                 },
                 onsessionclosed: (sid) => {
                   this.sessions.delete(sid);
@@ -98,18 +110,38 @@ export class McphubServer {
                   }
                 }
               };
-              session = { transport, server };
+              session = { transport, server, lastActivity: Date.now(), hasOpenStream: false };
               await server.connect(transport);
             }
 
             const { transport, server } = session;
+            session.lastActivity = Date.now();
+            if (req.method === "GET") {
+              session.hasOpenStream = true;
+              res.on("close", () => {
+                session.hasOpenStream = false;
+              });
+            }
             let parsed: unknown;
             if (req.method === "POST") {
               const chunks: Buffer[] = [];
+              let size = 0;
               for await (const chunk of req) {
                 chunks.push(chunk);
+                size += chunk.length;
+                if (size > MAX_BODY_BYTES) {
+                  res.writeHead(413, { "Content-Type": "application/json" });
+                  res.end(JSON.stringify({ error: "Request body too large" }));
+                  return;
+                }
               }
-              parsed = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+              try {
+                parsed = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+              } catch {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "Invalid JSON body" }));
+                return;
+              }
             }
 
             await transport.handleRequest(
@@ -138,16 +170,33 @@ export class McphubServer {
       }
     );
 
-    return new Promise((resolve) => {
-      this.httpServer!.listen(port, () => {
-        console.log(`MCP Hub running on http://localhost:${port}/mcp`);
+    return new Promise<void>((resolve) => {
+      this.httpServer!.listen(port, host, () => {
+        console.log(`MCP Hub running on http://${host}:${port}/mcp`);
         resolve();
       });
+    }).then(() => {
+      this.sweepTimer = setInterval(() => {
+        const now = Date.now();
+        for (const [sid, entry] of this.sessions) {
+          if (!entry.hasOpenStream && now - entry.lastActivity > SESSION_IDLE_TTL_MS) {
+            this.sessions.delete(sid);
+            entry.server.close().catch(() => {});
+            entry.transport.close();
+          }
+        }
+      }, SESSION_SWEEP_INTERVAL_MS);
+      this.sweepTimer.unref();
     });
   }
 
   async stop(): Promise<void> {
     if (!this.httpServer) return;
+
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = null;
+    }
 
     for (const { transport, server } of this.sessions.values()) {
       await server.close().catch(() => {});
