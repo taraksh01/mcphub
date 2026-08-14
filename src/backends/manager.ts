@@ -100,21 +100,24 @@ export class McpClientManager {
   async syncConfig(oldServers: Record<string, McpServerConfig>, newServers: Record<string, McpServerConfig>): Promise<void> {
     const allNames = new Set([...Object.keys(oldServers), ...Object.keys(newServers)]);
     for (const name of allNames) {
-      this.clearRetry(name);
       const oldServer = oldServers[name];
       const newServer = newServers[name];
       if (!newServer) {
+        this.clearRetry(name);
         const b = this.backends.get(name);
         if (b) { try { await b.disconnect(); } catch {} this.backends.delete(name); this.failures.delete(name); }
         continue;
       }
       if (newServer.enabled === false) {
+        this.clearRetry(name);
         const b = this.backends.get(name);
         if (b) { try { await b.disconnect(); } catch {} this.backends.delete(name); }
+        this.failures.delete(name);
         console.log(`Skipping disabled backend "${name}"`);
         continue;
       }
       if (oldServer && JSON.stringify(oldServer) === JSON.stringify(newServer)) continue;
+      this.clearRetry(name);
       const existing = this.backends.get(name);
       if (existing) { try { await existing.disconnect(); } catch {} this.backends.delete(name); }
       try {
