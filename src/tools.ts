@@ -8,7 +8,11 @@ export interface NamespacedTool {
   inputSchema?: Record<string, unknown>;
 }
 
+const TOOL_CACHE_TTL_MS = 30_000;
+
 export class ToolAggregator {
+  private cache = new Map<string, { tools: NamespacedTool[]; fetchedAt: number }>();
+
   constructor(private manager: McpClientManager) {}
 
   async getAllTools(): Promise<NamespacedTool[]> {
@@ -16,19 +20,25 @@ export class ToolAggregator {
     const backends = this.manager.getAllBackends();
 
     for (const backend of backends) {
+      const name = backend.getName();
+      const cached = this.cache.get(name);
+      if (cached && Date.now() - cached.fetchedAt < TOOL_CACHE_TTL_MS) {
+        tools.push(...cached.tools);
+        continue;
+      }
       try {
         const backendTools = await backend.getTools();
-        for (const tool of backendTools) {
-          tools.push({
-            name: `${backend.getName()}:${tool.name}`,
-            originalName: tool.name,
-            backend: backend.getName(),
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-          });
-        }
+        const namespaced = backendTools.map((tool) => ({
+          name: `${name}:${tool.name}`,
+          originalName: tool.name,
+          backend: name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        }));
+        this.cache.set(name, { tools: namespaced, fetchedAt: Date.now() });
+        tools.push(...namespaced);
       } catch (e) {
-        console.error(`Failed to list tools for "${backend.getName()}":`, e);
+        console.error(`Failed to list tools for "${name}":`, e);
       }
     }
 
