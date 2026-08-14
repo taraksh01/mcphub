@@ -11,7 +11,7 @@ export interface NamespacedTool {
 const TOOL_CACHE_TTL_MS = 30_000;
 
 export class ToolAggregator {
-  private cache = new Map<string, { tools: NamespacedTool[]; fetchedAt: number }>();
+  private cache = new Map<string, { backend: unknown; tools: NamespacedTool[]; fetchedAt: number }>();
 
   constructor(private manager: McpClientManager) {}
 
@@ -22,7 +22,7 @@ export class ToolAggregator {
     for (const backend of backends) {
       const name = backend.getName();
       const cached = this.cache.get(name);
-      if (cached && Date.now() - cached.fetchedAt < TOOL_CACHE_TTL_MS) {
+      if (cached && cached.backend === backend && Date.now() - cached.fetchedAt < TOOL_CACHE_TTL_MS) {
         tools.push(...cached.tools);
         continue;
       }
@@ -35,7 +35,7 @@ export class ToolAggregator {
           description: tool.description,
           inputSchema: tool.inputSchema,
         }));
-        this.cache.set(name, { tools: namespaced, fetchedAt: Date.now() });
+        this.cache.set(name, { backend, tools: namespaced, fetchedAt: Date.now() });
         tools.push(...namespaced);
       } catch (e) {
         console.error(`Failed to list tools for "${name}":`, e);

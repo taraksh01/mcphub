@@ -95,7 +95,10 @@ export class McphubOAuthProvider implements OAuthClientProvider {
   }
 
   async invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): Promise<void> {
-    if (scope === "all" || scope === "client") this.clientInfo = null;
+    if (scope === "all" || scope === "client") {
+      this.clientInfo = null;
+      this.persist(this.clientInfoPath(), null);
+    }
     if (scope === "all" || scope === "tokens") {
       this.tokensState = null;
       this.persist(this.tokenPath(), null);

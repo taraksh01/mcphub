@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
-import { dirname, join } from "path";
+import { dirname, join, basename } from "path";
 import { HubConfig, McpServerConfig } from "./types.js";
 
 const DEFAULT_CONFIG: HubConfig = {
@@ -91,7 +91,10 @@ export class ConfigManager {
   }
 
   startWatching(callback: (config: HubConfig) => void): void {
-    this.watcher = watch(this.configPath, () => {
+    const dir = dirname(this.configPath);
+    const base = basename(this.configPath);
+    this.watcher = watch(dir, (event, filename) => {
+      if (filename !== base) return;
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {
         this.config = this.load();
