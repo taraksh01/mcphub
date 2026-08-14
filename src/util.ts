@@ -9,3 +9,13 @@ export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, lab
     clearTimeout(timer!);
   }
 }
+
+export function tokenizeCommand(input: string): string[] {
+  const tokens: string[] = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(input)) !== null) {
+    tokens.push(m[1] ?? m[2] ?? m[3]);
+  }
+  return tokens;
+}

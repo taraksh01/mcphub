@@ -9,6 +9,7 @@ import { McphubServer } from "./server.js";
 import { VERSION } from "./version.js";
 import { installService, uninstallService } from "./service.js";
 import { loadShellEnv } from "./shellEnv.js";
+import { tokenizeCommand } from "./util.js";
 import { OAuthClientProvider } from "./oauth.js";
 
 let config: ConfigManager;
@@ -155,7 +156,7 @@ program
     }
 
     if (options.stdio !== undefined) {
-      const parts = options.stdio.trim().split(/\s+/);
+      const parts = tokenizeCommand(options.stdio);
       if (!parts[0]) {
         console.error("Command cannot be empty");
         process.exit(1);
