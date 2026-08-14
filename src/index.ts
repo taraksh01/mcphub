@@ -35,6 +35,49 @@ function removePid(): void {
   if (existsSync(file)) unlinkSync(file);
 }
 
+async function stopHub(): Promise<void> {
+  config = new ConfigManager(program.opts().config);
+  const pid = readPid();
+  if (!pid) {
+    console.log("Hub not running");
+    return;
+  }
+  try {
+    process.kill(pid, "SIGTERM");
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 200));
+      try { process.kill(pid, 0); } catch {
+        removePid();
+        console.log(`Hub stopped (PID: ${pid})`);
+        return;
+      }
+    }
+    console.error("Hub did not stop within 4s, force removing PID");
+    removePid();
+  } catch {
+    removePid();
+    console.log("Hub process not found, cleaned up PID file");
+  }
+}
+
+async function startDaemon(port: number, host: string): Promise<void> {
+  const { fork } = await import("child_process");
+  const args = ["start", "--port", String(port), "--host", host];
+  const cfgPath = program.opts().config || process.env.MCPHUB_CONFIG;
+  if (cfgPath) args.push("--config", cfgPath);
+  const logPath = join(dirname(config.getConfigPath()), "hub.log");
+  const logFd = openSync(logPath, "a");
+  const child = fork(process.argv[1], args, {
+    detached: true,
+    stdio: ["ignore", logFd, logFd, "ipc"],
+  });
+  child.unref();
+  mkdirSync(dirname(pidFile()), { recursive: true });
+  writeFileSync(pidFile(), String(child.pid));
+  console.log(`Hub started as daemon (PID: ${child.pid}, logs: ${logPath})`);
+  process.exit(0);
+}
+
 const program = new Command();
 
 program
@@ -61,21 +104,7 @@ program
     const host = options.host ?? "127.0.0.1";
 
     if (options.daemon) {
-      const { fork } = await import("child_process");
-      const args = ["start", "--port", String(port), "--host", host];
-      const cfgPath = program.opts().config || process.env.MCPHUB_CONFIG;
-      if (cfgPath) args.push("--config", cfgPath);
-      const logPath = join(dirname(config.getConfigPath()), "hub.log");
-      const logFd = openSync(logPath, "a");
-      const child = fork(process.argv[1], args, {
-        detached: true,
-        stdio: ["ignore", logFd, logFd, "ipc"],
-      });
-      child.unref();
-      mkdirSync(dirname(pidFile()), { recursive: true });
-      writeFileSync(pidFile(), String(child.pid));
-      console.log(`Hub started as daemon (PID: ${child.pid}, logs: ${logPath})`);
-      process.exit(0);
+      await startDaemon(port, host);
     }
 
     const manager = new McpClientManager();
@@ -110,28 +139,37 @@ program
   .command("stop")
   .description("Stop the hub daemon")
   .action(async () => {
+    await stopHub();
+  });
+
+program
+  .command("restart")
+  .description("Restart the hub daemon (stops, then starts in the background)")
+  .option("-p, --port <port>", "Port number", parseInt)
+  .action(async (options) => {
     config = new ConfigManager(program.opts().config);
+    const port = options.port ?? config.get().port ?? 5431;
     const pid = readPid();
     if (!pid) {
       console.log("Hub not running");
-      return;
-    }
-    try {
-      process.kill(pid, "SIGTERM");
-      for (let i = 0; i < 50; i++) {
-        await new Promise(r => setTimeout(r, 200));
-        try { process.kill(pid, 0); } catch {
-          removePid();
-          console.log(`Hub stopped (PID: ${pid})`);
-          return;
+    } else {
+      try {
+        process.kill(pid, "SIGTERM");
+        for (let i = 0; i < 50; i++) {
+          await new Promise(r => setTimeout(r, 200));
+          try { process.kill(pid, 0); } catch {
+            removePid();
+            console.log(`Hub stopped (PID: ${pid})`);
+            break;
+          }
         }
+        try { process.kill(pid, 0); console.error("Hub did not stop within 10s, force removing PID"); removePid(); } catch {}
+      } catch {
+        removePid();
+        console.log("Hub process not found, cleaned up PID file");
       }
-      console.error("Hub did not stop within 10s, force removing PID");
-      removePid();
-    } catch {
-      removePid();
-      console.log("Hub process not found, cleaned up PID file");
     }
+    await startDaemon(port, "127.0.0.1");
   });
 
 program
@@ -258,7 +296,7 @@ program
 program
   .command("status")
   .description("Show hub status")
-  .action(() => {
+  .action(async () => {
     config = new ConfigManager(program.opts().config);
     const pid = readPid();
     if (!pid) {
@@ -285,6 +323,15 @@ program
           console.log(`  ${name}: http — ${server.url}${disabledNote}`);
         }
       }
+      try {
+        const health = await fetch(`http://localhost:${config.get().port}/health`).then(r => r.json());
+        if (health.failures?.length > 0) {
+          console.log(`\nFailed backends (${health.failures.length}):`);
+          for (const f of health.failures) {
+            console.log(`  ${f.name}: ${f.error}`);
+          }
+        }
+      } catch {}
     }
   });
 
