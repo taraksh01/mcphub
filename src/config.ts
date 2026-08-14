@@ -33,11 +33,28 @@ export class ConfigManager {
   private load(): HubConfig {
     try {
       const raw = readFileSync(this.configPath, "utf-8");
-      return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
-    } catch (e) {
-      if (e instanceof SyntaxError) {
-        console.error("Config file has invalid JSON, using defaults");
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null) {
+        throw new Error("config must be a JSON object");
       }
+      const merged = { ...DEFAULT_CONFIG, ...(parsed as Partial<HubConfig>) };
+      if (typeof merged.port !== "number") {
+        throw new Error('"port" must be a number');
+      }
+      const mcpServers = merged.mcpServers;
+      if (typeof mcpServers !== "object" || mcpServers === null || Array.isArray(mcpServers)) {
+        throw new Error('"mcpServers" must be an object');
+      }
+      for (const [name, server] of Object.entries(mcpServers)) {
+        if (typeof server !== "object" || server === null ||
+            (server.type !== "stdio" && server.type !== "http")) {
+          throw new Error(`invalid server entry "${name}"`);
+        }
+      }
+      return merged;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`Config file "${this.configPath}" is invalid (${msg}), using defaults`);
       return { ...DEFAULT_CONFIG };
     }
   }
