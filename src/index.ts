@@ -343,7 +343,7 @@ program
   .description("Remove the boot-time service")
   .action(() => {
     config = new ConfigManager(program.opts().config);
-    uninstallService(config);
+    uninstallService();
   });
 
 program.parse();

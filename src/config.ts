@@ -93,7 +93,7 @@ export class ConfigManager {
   startWatching(callback: (config: HubConfig) => void): void {
     const dir = dirname(this.configPath);
     const base = basename(this.configPath);
-    this.watcher = watch(dir, (event, filename) => {
+    this.watcher = watch(dir, (_event, filename) => {
       if (filename !== base) return;
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {

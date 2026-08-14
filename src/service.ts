@@ -36,7 +36,7 @@ export function installService(config: ConfigManager): void {
   }
 }
 
-export function uninstallService(config: ConfigManager): void {
+export function uninstallService(): void {
   const plat = platform();
   if (plat === "linux") {
     uninstallLinux();
