@@ -13,17 +13,22 @@ const TOOL_CACHE_TTL_MS = 30_000;
 export class ToolAggregator {
   private cache = new Map<string, { backend: unknown; tools: NamespacedTool[]; fetchedAt: number }>();
 
-  constructor(private manager: McpClientManager) {}
+  constructor(
+    private manager: McpClientManager,
+    private getDisabledTools: (backend: string) => string[]
+  ) {}
 
-  async getAllTools(): Promise<NamespacedTool[]> {
+  async getAllTools(includeDisabled = false): Promise<NamespacedTool[]> {
     const tools: NamespacedTool[] = [];
     const backends = this.manager.getAllBackends();
+    const disabled = (name: string) => new Set(this.getDisabledTools(name));
 
     for (const backend of backends) {
       const name = backend.getName();
       const cached = this.cache.get(name);
       if (cached && cached.backend === backend && Date.now() - cached.fetchedAt < TOOL_CACHE_TTL_MS) {
-        tools.push(...cached.tools);
+        const filtered = includeDisabled ? cached.tools : cached.tools.filter((t) => !disabled(name).has(t.originalName));
+        tools.push(...filtered);
         continue;
       }
       try {
@@ -36,7 +41,8 @@ export class ToolAggregator {
           inputSchema: tool.inputSchema,
         }));
         this.cache.set(name, { backend, tools: namespaced, fetchedAt: Date.now() });
-        tools.push(...namespaced);
+        const filtered = includeDisabled ? namespaced : namespaced.filter((t) => !disabled(name).has(t.originalName));
+        tools.push(...filtered);
       } catch (e) {
         console.error(`Failed to list tools for "${name}":`, e);
       }
@@ -62,6 +68,9 @@ export class ToolAggregator {
     const backend = this.manager.getBackend(backendName);
     if (!backend) {
       throw new Error(`Backend "${backendName}" not connected`);
+    }
+    if (this.getDisabledTools(backendName).includes(toolName)) {
+      throw new Error(`Tool "${toolName}" is disabled on backend "${backendName}"`);
     }
 
     return backend.callTool(toolName, args);

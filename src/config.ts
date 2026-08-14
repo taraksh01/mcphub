@@ -50,6 +50,11 @@ export class ConfigManager {
             (server.type !== "stdio" && server.type !== "http")) {
           throw new Error(`invalid server entry "${name}"`);
         }
+        if (server.disabledTools !== undefined &&
+            (!Array.isArray(server.disabledTools) ||
+             server.disabledTools.some((t) => typeof t !== "string"))) {
+          throw new Error(`"disabledTools" of server "${name}" must be an array of strings`);
+        }
       }
       return merged;
     } catch (e) {
@@ -83,6 +88,22 @@ export class ConfigManager {
     if (!server) return false;
     server.enabled = enabled;
     this.save();
+    return true;
+  }
+
+  setToolDisabled(name: string, tool: string, disabled: boolean): boolean {
+    const server = this.config.mcpServers[name];
+    if (!server) return false;
+    const list = server.disabledTools ?? [];
+    const idx = list.indexOf(tool);
+    if (disabled && idx === -1) {
+      server.disabledTools = [...list, tool];
+      this.save();
+    } else if (!disabled && idx !== -1) {
+      server.disabledTools = list.filter((t) => t !== tool);
+      if (server.disabledTools.length === 0) delete server.disabledTools;
+      this.save();
+    }
     return true;
   }
 

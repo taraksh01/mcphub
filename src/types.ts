@@ -6,6 +6,7 @@ export interface McpServerConfig {
   url?: string;
   cwd?: string;
   enabled?: boolean;
+  disabledTools?: string[];
 }
 
 export interface HubConfig {
