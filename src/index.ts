@@ -69,7 +69,7 @@ program
       const logFd = openSync(logPath, "a");
       const child = fork(process.argv[1], args, {
         detached: true,
-        stdio: ["ignore", logFd, logFd],
+        stdio: ["ignore", logFd, logFd, "ipc"],
       });
       child.unref();
       mkdirSync(dirname(pidFile()), { recursive: true });
