@@ -1,23 +1,17 @@
 import { execSync } from "child_process";
 import { writeFileSync, unlinkSync, existsSync } from "fs";
 import { homedir, platform } from "os";
-import { join, resolve } from "path";
+import { join } from "path";
 import { ConfigManager } from "./config.js";
 
 const LABEL = "com.mcphub";
 
-function nodeBin(): string {
-  return process.execPath;
-}
-
-function scriptPath(): string {
-  return resolve(process.argv[1]);
-}
+const DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 function serviceArgs(config: ConfigManager): string[] {
   const cfg = config.get();
   const port = cfg.port ?? 5431;
-  const args = [nodeBin(), scriptPath(), "start", "--port", String(port)];
+  const args = ["mcphub", "start", "--port", String(port)];
   args.push("--config", config.getConfigPath());
   return args;
 }
@@ -55,7 +49,7 @@ const SYSTEMD_PATH = "/etc/systemd/system/mcphub.service";
 function installLinux(config: ConfigManager): void {
   const args = serviceArgs(config);
   const user = process.env.USER || "root";
-  const path = process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+  const path = process.env.PATH || DEFAULT_PATH;
   const unit = `[Unit]
 Description=MCP Hub
 After=network.target
@@ -134,6 +128,11 @@ function installMacOS(config: ConfigManager): void {
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${process.env.PATH || DEFAULT_PATH}</string>
+  </dict>
   <key>StandardOutPath</key>
   <string>/tmp/mcphub.log</string>
   <key>StandardErrorPath</key>
