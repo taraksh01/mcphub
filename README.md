@@ -55,6 +55,9 @@ mcphub status
 # Stop the daemon
 mcphub stop
 
+# Restart the daemon (stops, then starts in the background)
+mcphub restart
+
 # Show config path
 mcphub config
 
@@ -71,7 +74,9 @@ The hub listens on `http://localhost:5431/mcp` by default. Override with `--port
 mcphub start --port 8080
 ```
 
-Health check at `GET /health` returns `{ "status": "ok" }`.
+Servers that fail to connect at start are retried automatically at 5s, 10s, and 20s, then given up. Failed backends are shown in `mcphub status` (via `GET /health`).
+
+Health check at `GET /health` returns `{ "status": "ok" }`, plus a `failures` list when any backend is down.
 
 ## Configure your CLIs
 
@@ -196,6 +201,7 @@ Options:
 Commands:
   start [options]         Start the MCP Hub
   stop                    Stop the hub daemon
+  restart                 Restart the hub daemon (background)
   add [options] <name>    Add a server
   remove <name>           Remove a server
   list                    List configured servers

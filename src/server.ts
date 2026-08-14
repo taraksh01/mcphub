@@ -5,6 +5,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ToolAggregator } from "./tools.js";
+import { McpClientManager } from "./backends/manager.js";
 import { VERSION } from "./version.js";
 import type { IncomingMessage, ServerResponse } from "http";
 
@@ -50,7 +51,8 @@ export class McphubServer {
   private httpServer: import("http").Server | null = null;
 
   constructor(
-    private aggregator: ToolAggregator
+    private aggregator: ToolAggregator,
+    private manager: McpClientManager
   ) {}
 
   async start(port: number): Promise<void> {
@@ -58,8 +60,11 @@ export class McphubServer {
     this.httpServer = http.createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
         if (req.method === "GET" && req.url === "/health") {
+          const failures = this.manager.getFailures();
+          const body: Record<string, unknown> = { status: "ok" };
+          if (failures.length > 0) body.failures = failures;
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ status: "ok" }));
+          res.end(JSON.stringify(body));
           return;
         }
 

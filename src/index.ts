@@ -34,6 +34,47 @@ function removePid(): void {
   if (existsSync(file)) unlinkSync(file);
 }
 
+async function stopHub(): Promise<void> {
+  config = new ConfigManager(program.opts().config);
+  const pid = readPid();
+  if (!pid) {
+    console.log("Hub not running");
+    return;
+  }
+  try {
+    process.kill(pid, "SIGTERM");
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 200));
+      try { process.kill(pid, 0); } catch {
+        removePid();
+        console.log(`Hub stopped (PID: ${pid})`);
+        return;
+      }
+    }
+    console.error("Hub did not stop within 4s, force removing PID");
+    removePid();
+  } catch {
+    removePid();
+    console.log("Hub process not found, cleaned up PID file");
+  }
+}
+
+async function startDaemon(port: number): Promise<void> {
+  const { fork } = await import("child_process");
+  const args = ["start", "--port", String(port)];
+  const cfgPath = program.opts().config || process.env.MCPHUB_CONFIG;
+  if (cfgPath) args.push("--config", cfgPath);
+  const child = fork(process.argv[1], args, {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  mkdirSync(dirname(pidFile()), { recursive: true });
+  writeFileSync(pidFile(), String(child.pid));
+  console.log(`Hub started as daemon (PID: ${child.pid})`);
+  process.exit(0);
+}
+
 const program = new Command();
 
 program
@@ -58,24 +99,12 @@ program
     }
 
     if (options.daemon) {
-      const { fork } = await import("child_process");
-      const args = ["start", "--port", String(port)];
-      const cfgPath = program.opts().config || process.env.MCPHUB_CONFIG;
-      if (cfgPath) args.push("--config", cfgPath);
-      const child = fork(process.argv[1], args, {
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
-      mkdirSync(dirname(pidFile()), { recursive: true });
-      writeFileSync(pidFile(), String(child.pid));
-      console.log(`Hub started as daemon (PID: ${child.pid})`);
-      process.exit(0);
+      await startDaemon(port);
     }
 
     const manager = new McpClientManager();
     const aggregator = new ToolAggregator(manager);
-    const server = new McphubServer(aggregator);
+    const server = new McphubServer(aggregator, manager);
 
     const shutdown = async () => {
       console.log("\nShutting down...");
@@ -105,28 +134,18 @@ program
   .command("stop")
   .description("Stop the hub daemon")
   .action(async () => {
+    await stopHub();
+  });
+
+program
+  .command("restart")
+  .description("Restart the hub daemon (stops, then starts in the background)")
+  .option("-p, --port <port>", "Port number", parseInt)
+  .action(async (options) => {
     config = new ConfigManager(program.opts().config);
-    const pid = readPid();
-    if (!pid) {
-      console.log("Hub not running");
-      return;
-    }
-    try {
-      process.kill(pid, "SIGTERM");
-      for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 200));
-        try { process.kill(pid, 0); } catch {
-          removePid();
-          console.log(`Hub stopped (PID: ${pid})`);
-          return;
-        }
-      }
-      console.error("Hub did not stop within 4s, force removing PID");
-      removePid();
-    } catch {
-      removePid();
-      console.log("Hub process not found, cleaned up PID file");
-    }
+    const port = options.port ?? config.get().port ?? 5431;
+    await stopHub();
+    await startDaemon(port);
   });
 
 program
@@ -253,7 +272,7 @@ program
 program
   .command("status")
   .description("Show hub status")
-  .action(() => {
+  .action(async () => {
     config = new ConfigManager(program.opts().config);
     const pid = readPid();
     if (!pid) {
@@ -280,6 +299,15 @@ program
           console.log(`  ${name}: http — ${server.url}${disabledNote}`);
         }
       }
+      try {
+        const health = await fetch(`http://localhost:${config.get().port}/health`).then(r => r.json());
+        if (health.failures?.length > 0) {
+          console.log(`\nFailed backends (${health.failures.length}):`);
+          for (const f of health.failures) {
+            console.log(`  ${f.name}: ${f.error}`);
+          }
+        }
+      } catch {}
     }
   });
 
