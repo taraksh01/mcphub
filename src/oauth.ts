@@ -106,6 +106,8 @@ export class McphubOAuthProvider implements OAuthClientProvider {
 
   async startAuthFlow(): Promise<OAuthTokens> {
     const server = createServer(() => {});
+    const callbackPromise = this.waitForCallback(server);
+    callbackPromise.catch(() => {});
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(CALLBACK_PORT, resolve);
@@ -115,7 +117,7 @@ export class McphubOAuthProvider implements OAuthClientProvider {
       if (first === "AUTHORIZED") {
         return this.requireTokens();
       }
-      const code = await this.waitForCallback(server);
+      const code = await callbackPromise;
       const second = await auth(this, { serverUrl: this.serverUrl, authorizationCode: code });
       if (second !== "AUTHORIZED") {
         throw new Error("Authorization did not complete");
@@ -138,6 +140,7 @@ export class McphubOAuthProvider implements OAuthClientProvider {
         server.close();
         reject(new Error("Timed out waiting for authorization callback"));
       }, CALLBACK_TIMEOUT_MS);
+      server.on("close", () => clearTimeout(timeout));
       server.on("request", (req, res) => {
         const url = new URL(req.url ?? "/", CALLBACK_URL);
         if (url.pathname !== "/callback") return;
