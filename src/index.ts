@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync } from "fs";
+import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, openSync } from "fs";
 import { dirname, join } from "path";
 import { ConfigManager } from "./config.js";
 import { McpClientManager } from "./backends/manager.js";
@@ -9,6 +9,7 @@ import { McphubServer } from "./server.js";
 import { VERSION } from "./version.js";
 import { installService, uninstallService } from "./service.js";
 import { loadShellEnv } from "./shellEnv.js";
+import { tokenizeCommand } from "./util.js";
 import { OAuthClientProvider } from "./oauth.js";
 
 let config: ConfigManager;
@@ -59,19 +60,21 @@ async function stopHub(): Promise<void> {
   }
 }
 
-async function startDaemon(port: number): Promise<void> {
+async function startDaemon(port: number, host: string): Promise<void> {
   const { fork } = await import("child_process");
-  const args = ["start", "--port", String(port)];
+  const args = ["start", "--port", String(port), "--host", host];
   const cfgPath = program.opts().config || process.env.MCPHUB_CONFIG;
   if (cfgPath) args.push("--config", cfgPath);
+  const logPath = join(dirname(config.getConfigPath()), "hub.log");
+  const logFd = openSync(logPath, "a");
   const child = fork(process.argv[1], args, {
     detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", logFd, logFd, "ipc"],
   });
   child.unref();
   mkdirSync(dirname(pidFile()), { recursive: true });
   writeFileSync(pidFile(), String(child.pid));
-  console.log(`Hub started as daemon (PID: ${child.pid})`);
+  console.log(`Hub started as daemon (PID: ${child.pid}, logs: ${logPath})`);
   process.exit(0);
 }
 
@@ -87,6 +90,7 @@ program
   .command("start")
   .description("Start the MCP Hub")
   .option("-p, --port <port>", "Port number", parseInt)
+  .option("--host <host>", "Host to bind (default 127.0.0.1)")
   .option("-d, --daemon", "Run as daemon")
   .action(async (options) => {
     config = new ConfigManager(program.opts().config);
@@ -97,9 +101,10 @@ program
       console.error("Port must be a number between 1 and 65535");
       process.exit(1);
     }
+    const host = options.host ?? "127.0.0.1";
 
     if (options.daemon) {
-      await startDaemon(port);
+      await startDaemon(port, host);
     }
 
     const manager = new McpClientManager();
@@ -119,7 +124,7 @@ program
     process.on("SIGTERM", shutdown);
 
     await manager.connectAll(cfg.mcpServers);
-    await server.start(port);
+    await server.start(port, host);
 
     writePid();
 
@@ -144,8 +149,27 @@ program
   .action(async (options) => {
     config = new ConfigManager(program.opts().config);
     const port = options.port ?? config.get().port ?? 5431;
-    await stopHub();
-    await startDaemon(port);
+    const pid = readPid();
+    if (!pid) {
+      console.log("Hub not running");
+    } else {
+      try {
+        process.kill(pid, "SIGTERM");
+        for (let i = 0; i < 50; i++) {
+          await new Promise(r => setTimeout(r, 200));
+          try { process.kill(pid, 0); } catch {
+            removePid();
+            console.log(`Hub stopped (PID: ${pid})`);
+            break;
+          }
+        }
+        try { process.kill(pid, 0); console.error("Hub did not stop within 10s, force removing PID"); removePid(); } catch {}
+      } catch {
+        removePid();
+        console.log("Hub process not found, cleaned up PID file");
+      }
+    }
+    await startDaemon(port, "127.0.0.1");
   });
 
 program
@@ -174,7 +198,7 @@ program
     }
 
     if (options.stdio !== undefined) {
-      const parts = options.stdio.trim().split(/\s+/);
+      const parts = tokenizeCommand(options.stdio);
       if (!parts[0]) {
         console.error("Command cannot be empty");
         process.exit(1);
@@ -332,9 +356,12 @@ program
     try {
       const tokens = await provider.startAuthFlow();
       console.log("Authentication successful!");
-      console.log(`Access token: ${tokens.access_token.slice(0, 20)}...`);
+      console.log(`Access token: ${tokens.access_token.slice(0, 4)}...${tokens.access_token.slice(-4)}`);
       if (tokens.refresh_token) {
         console.log("Refresh token stored for auto-renewal");
+      }
+      if (readPid()) {
+        console.log("Restart the hub (mcphub restart) for it to use the new token");
       }
     } catch (e) {
       console.error("Authentication failed:", String(e));
@@ -363,7 +390,7 @@ program
   .description("Remove the boot-time service")
   .action(() => {
     config = new ConfigManager(program.opts().config);
-    uninstallService(config);
+    uninstallService();
   });
 
 program.parse();

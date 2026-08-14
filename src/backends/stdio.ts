@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { McpServerConfig, IBackend } from "../types.js";
 import { VERSION } from "../version.js";
+import { withTimeout } from "../util.js";
 
 export class StdioBackend implements IBackend {
   private client: Client;
@@ -34,12 +35,21 @@ export class StdioBackend implements IBackend {
     }
     Object.assign(env, this.config.env);
 
-    await this.client.connect(new StdioClientTransport({
-      command: this.config.command,
-      args: this.config.args || [],
-      cwd: this.config.cwd || process.cwd(),
-      env,
-    }));
+    try {
+      await withTimeout(
+        this.client.connect(new StdioClientTransport({
+          command: this.config.command,
+          args: this.config.args || [],
+          cwd: this.config.cwd || process.cwd(),
+          env,
+        })),
+        30_000,
+        `connect to stdio server "${this.name}"`
+      );
+    } catch (e) {
+      await this.client.close().catch(() => {});
+      throw e;
+    }
   }
 
   async disconnect(): Promise<void> {

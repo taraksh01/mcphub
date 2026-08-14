@@ -36,7 +36,7 @@ export function installService(config: ConfigManager): void {
   }
 }
 
-export function uninstallService(config: ConfigManager): void {
+export function uninstallService(): void {
   const plat = platform();
   if (plat === "linux") {
     uninstallLinux();
@@ -142,7 +142,11 @@ function installMacOS(config: ConfigManager): void {
 </plist>
 `;
   writeFileSync(LAUNCHD_PATH, plist);
-  execSync(`launchctl load ${LAUNCHD_PATH}`, { stdio: "inherit" });
+  try {
+    execSync(`launchctl bootstrap gui/$(id -u) ${LAUNCHD_PATH}`, { stdio: "inherit" });
+  } catch {
+    execSync(`launchctl load ${LAUNCHD_PATH}`, { stdio: "inherit" });
+  }
   console.log("Service installed and loaded");
 }
 
@@ -151,7 +155,11 @@ function uninstallMacOS(): void {
     console.log("Service not installed");
     return;
   }
-  execSync(`launchctl unload ${LAUNCHD_PATH} 2>/dev/null`, { stdio: "ignore" });
+  try {
+    execSync(`launchctl bootout gui/$(id -u) ${LAUNCHD_PATH}`, { stdio: "ignore" });
+  } catch {
+    execSync(`launchctl unload ${LAUNCHD_PATH}`, { stdio: "ignore" });
+  }
   unlinkSync(LAUNCHD_PATH);
   console.log("Service removed");
 }

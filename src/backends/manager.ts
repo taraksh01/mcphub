@@ -105,7 +105,8 @@ export class McpClientManager {
       if (!newServer) {
         this.clearRetry(name);
         const b = this.backends.get(name);
-        if (b) { try { await b.disconnect(); } catch {} this.backends.delete(name); this.failures.delete(name); }
+        if (b) { try { await b.disconnect(); } catch {} this.backends.delete(name); }
+        this.failures.delete(name);
         continue;
       }
       if (newServer.enabled === false) {

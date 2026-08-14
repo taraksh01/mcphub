@@ -3,6 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { McpServerConfig, IBackend } from "../types.js";
 import { VERSION } from "../version.js";
 import { OAuthClientProvider } from "../oauth.js";
+import { withTimeout } from "../util.js";
 
 export class HttpBackend implements IBackend {
   private client: Client;
@@ -32,10 +33,19 @@ export class HttpBackend implements IBackend {
     this.authProvider = new OAuthClientProvider(this.name, this.config.url);
     const tokens = await this.authProvider.tokens();
 
-    await this.client.connect(new StreamableHTTPClientTransport(
-      new URL(this.config.url),
-      tokens ? { authProvider: this.authProvider } : undefined
-    ));
+    try {
+      await withTimeout(
+        this.client.connect(new StreamableHTTPClientTransport(
+          new URL(this.config.url),
+          tokens ? { authProvider: this.authProvider } : undefined
+        )),
+        30_000,
+        `connect to http server "${this.name}"`
+      );
+    } catch (e) {
+      await this.client.close().catch(() => {});
+      throw e;
+    }
   }
 
   async disconnect(): Promise<void> {
