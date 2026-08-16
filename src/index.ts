@@ -35,6 +35,19 @@ function removePid(): void {
   if (existsSync(file)) unlinkSync(file);
 }
 
+function runningPort(pid: number): number | null {
+  try {
+    const cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf-8");
+    const args = cmdline.split("\0");
+    const idx = args.indexOf("--port");
+    if (idx !== -1 && args[idx + 1]) {
+      const p = parseInt(args[idx + 1], 10);
+      if (!isNaN(p)) return p;
+    }
+  } catch {}
+  return null;
+}
+
 async function stopHub(): Promise<void> {
   config = new ConfigManager(program.opts().config);
   const pid = readPid();
@@ -364,7 +377,8 @@ program
     }
     console.log("Hub is running");
     console.log(`PID: ${pid}`);
-    console.log(`Port: ${config.get().port}`);
+    const port = runningPort(pid) ?? config.get().port;
+    console.log(`Port: ${port}`);
     try {
       process.kill(pid, 0);
     } catch {
@@ -383,7 +397,7 @@ program
         }
       }
       try {
-        const health = await fetch(`http://localhost:${config.get().port}/health`).then(r => r.json());
+        const health = await fetch(`http://localhost:${port}/health`).then(r => r.json());
         if (health.failures?.length > 0) {
           console.log(`\nFailed backends (${health.failures.length}):`);
           for (const f of health.failures) {
