@@ -52,8 +52,18 @@ async function stopHub(): Promise<void> {
         return;
       }
     }
-    console.error("Hub did not stop within 4s, force removing PID");
+    console.error("Hub did not stop within 4s, sending SIGKILL");
+    process.kill(pid, "SIGKILL");
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 200));
+      try { process.kill(pid, 0); } catch {
+        removePid();
+        console.log(`Hub force-stopped (PID: ${pid})`);
+        return;
+      }
+    }
     removePid();
+    console.error("Hub still alive after SIGKILL, removed stale PID file");
   } catch {
     removePid();
     console.log("Hub process not found, cleaned up PID file");
@@ -186,26 +196,7 @@ program
   .action(async (options) => {
     config = new ConfigManager(program.opts().config);
     const port = options.port ?? config.get().port ?? 5431;
-    const pid = readPid();
-    if (!pid) {
-      console.log("Hub not running");
-    } else {
-      try {
-        process.kill(pid, "SIGTERM");
-        for (let i = 0; i < 50; i++) {
-          await new Promise(r => setTimeout(r, 200));
-          try { process.kill(pid, 0); } catch {
-            removePid();
-            console.log(`Hub stopped (PID: ${pid})`);
-            break;
-          }
-        }
-        try { process.kill(pid, 0); console.error("Hub did not stop within 10s, force removing PID"); removePid(); } catch {}
-      } catch {
-        removePid();
-        console.log("Hub process not found, cleaned up PID file");
-      }
-    }
+    await stopHub();
     await startDaemon(port, "127.0.0.1");
   });
 
