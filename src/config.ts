@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, watch } from "fs";
 import { dirname, join, basename } from "path";
 import { HubConfig, McpServerConfig } from "./types.js";
 
@@ -70,7 +70,9 @@ export class ConfigManager {
 
   save(): void {
     mkdirSync(dirname(this.configPath), { recursive: true });
-    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+    const tmp = `${this.configPath}.tmp`;
+    writeFileSync(tmp, JSON.stringify(this.config, null, 2));
+    renameSync(tmp, this.configPath);
   }
 
   updateServer(name: string, server: McpServerConfig): void {
