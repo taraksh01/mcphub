@@ -56,7 +56,7 @@ interface SessionEntry {
   transport: StreamableHTTPServerTransport;
   server: Server;
   lastActivity: number;
-  hasOpenStream: boolean;
+  openStreams: number;
 }
 
 export class McphubServer {
@@ -94,7 +94,7 @@ export class McphubServer {
               const transport = new StreamableHTTPServerTransport({
                 sessionIdGenerator: () => randomUUID(),
                 onsessioninitialized: (sid) => {
-                  this.sessions.set(sid, { transport, server, lastActivity: Date.now(), hasOpenStream: false });
+                  this.sessions.set(sid, { transport, server, lastActivity: Date.now(), openStreams: 0 });
                 },
                 onsessionclosed: (sid) => {
                   this.sessions.delete(sid);
@@ -110,16 +110,16 @@ export class McphubServer {
                   }
                 }
               };
-              session = { transport, server, lastActivity: Date.now(), hasOpenStream: false };
+              session = { transport, server, lastActivity: Date.now(), openStreams: 0 };
               await server.connect(transport);
             }
 
             const { transport, server } = session;
             session.lastActivity = Date.now();
             if (req.method === "GET") {
-              session.hasOpenStream = true;
+              session.openStreams++;
               res.on("close", () => {
-                session.hasOpenStream = false;
+                session.openStreams--;
               });
             }
             let parsed: unknown;
@@ -179,7 +179,7 @@ export class McphubServer {
       this.sweepTimer = setInterval(() => {
         const now = Date.now();
         for (const [sid, entry] of this.sessions) {
-          if (!entry.hasOpenStream && now - entry.lastActivity > SESSION_IDLE_TTL_MS) {
+          if (entry.openStreams === 0 && now - entry.lastActivity > SESSION_IDLE_TTL_MS) {
             this.sessions.delete(sid);
             entry.server.close().catch(() => {});
             entry.transport.close();
