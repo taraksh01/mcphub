@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import { createServer, type Server } from "http";
 import { homedir } from "os";
 import { join } from "path";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from "fs";
 import {
   auth,
   type OAuthClientProvider,
@@ -203,6 +203,7 @@ export class McphubOAuthProvider implements OAuthClientProvider {
       rmSync(path, { force: true });
     } else {
       writeFileSync(path, JSON.stringify(data, null, 2));
+      chmodSync(path, 0o600);
     }
   }
 }
