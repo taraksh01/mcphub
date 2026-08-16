@@ -48,6 +48,18 @@ function runningPort(pid: number): number | null {
   return null;
 }
 
+function runningHost(pid: number): string {
+  try {
+    const cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf-8");
+    const args = cmdline.split("\0");
+    const idx = args.indexOf("--host");
+    if (idx !== -1 && args[idx + 1]) {
+      return args[idx + 1];
+    }
+  } catch {}
+  return "127.0.0.1";
+}
+
 async function stopHub(): Promise<void> {
   config = new ConfigManager(program.opts().config);
   const pid = readPid();
@@ -212,8 +224,10 @@ program
   .action(async (options) => {
     config = new ConfigManager(program.opts().config);
     const port = options.port ?? config.get().port ?? 5431;
+    const pid = readPid();
+    const host = pid ? runningHost(pid) : "127.0.0.1";
     await stopHub();
-    await startDaemon(port, "127.0.0.1");
+    await startDaemon(port, host);
   });
 
 program
@@ -382,6 +396,7 @@ program
     console.log(`PID: ${pid}`);
     const port = runningPort(pid) ?? config.get().port;
     console.log(`Port: ${port}`);
+    console.log(`Host: ${runningHost(pid)}`);
     try {
       process.kill(pid, 0);
     } catch {
