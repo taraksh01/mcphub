@@ -167,7 +167,8 @@ const TASK_NAME = "MCPHub";
 
 function installWindows(config: ConfigManager): void {
   const args = serviceArgs(config);
-  const cmd = `schtasks /create /tn "${TASK_NAME}" /tr "${args.join(" ")}" /sc onstart /ru "%USERNAME%" /f`;
+  const trArg = args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ");
+  const cmd = `schtasks /create /tn "${TASK_NAME}" /tr "${trArg}" /sc onstart /ru "%USERNAME%" /f`;
   try {
     execSync(cmd, { stdio: "inherit" });
     console.log("Service installed (starts on next boot)");
