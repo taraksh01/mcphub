@@ -250,6 +250,10 @@ program
       }
     }
 
+    if (config.get().mcpServers[name]) {
+      console.warn(`Server "${name}" already exists, overwriting`);
+    }
+
     if (options.stdio !== undefined && options.url !== undefined) {
       console.error("Specify only one of --stdio or --url");
       process.exit(1);
