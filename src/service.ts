@@ -144,7 +144,13 @@ function installMacOS(config: ConfigManager): void {
   try {
     execSync(`launchctl bootstrap gui/$(id -u) ${LAUNCHD_PATH}`, { stdio: "inherit" });
   } catch {
-    execSync(`launchctl load ${LAUNCHD_PATH}`, { stdio: "inherit" });
+    try {
+      execSync(`launchctl load ${LAUNCHD_PATH}`, { stdio: "inherit" });
+    } catch (e) {
+      console.error("Failed to load launchd service:", String(e));
+      console.log("Try manually: launchctl load " + LAUNCHD_PATH);
+      return;
+    }
   }
   console.log("Service installed and loaded");
 }

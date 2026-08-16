@@ -182,8 +182,14 @@ export class McphubServer {
       }
     );
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
+      const onError = (err: Error) => reject(err);
+      this.httpServer!.once("error", onError);
       this.httpServer!.listen(port, host, () => {
+        this.httpServer!.off("error", onError);
+        if (process.send) {
+          try { (process as { send: (m: unknown) => void }).send({ type: "ready" }); } catch {}
+        }
         console.log(`MCP Hub running on http://${host}:${port}/mcp`);
         resolve();
       });
