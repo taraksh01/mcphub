@@ -13,13 +13,12 @@ function parseExport(line: string): [string, string] | null {
   const key = rest.slice(0, eq).trim();
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return null;
   let value = rest.slice(eq + 1).trim();
+  const hash = value.indexOf(" #");
+  if (hash !== -1) value = value.slice(0, hash).trim();
   const quoted = value.startsWith('"') && value.endsWith('"');
   const singleQuoted = value.startsWith("'") && value.endsWith("'");
   if (quoted || singleQuoted) {
     value = value.slice(1, -1);
-  } else {
-    const hash = value.indexOf(" #");
-    if (hash !== -1) value = value.slice(0, hash).trim();
   }
   return [key, value];
 }
