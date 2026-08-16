@@ -159,6 +159,9 @@ program
       process.exit(1);
     }
     const host = options.host ?? "127.0.0.1";
+    if (host !== "127.0.0.1" && host !== "::1" && host !== "localhost") {
+      console.warn(`WARNING: binding to ${host} exposes all MCP tools without authentication`);
+    }
 
     if (options.daemon) {
       await startDaemon(port, host);
