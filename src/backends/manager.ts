@@ -49,6 +49,8 @@ export class McpClientManager {
     const delay = McpClientManager.RETRY_DELAYS_MS[attempt];
     this.retryAttempts.set(name, attempt + 1);
     console.log(`Backend "${name}" failed, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${McpClientManager.RETRY_DELAYS_MS.length})`);
+    const existing = this.retryTimers.get(name);
+    if (existing) clearTimeout(existing);
     this.retryTimers.set(name, setTimeout(async () => {
       try {
         const backend = this.createBackend(name, config);
