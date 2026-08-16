@@ -10,6 +10,12 @@ import { VERSION } from "./version.js";
 import type { IncomingMessage, ServerResponse } from "http";
 import { randomUUID } from "crypto";
 
+function setCors(res: ServerResponse): void {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id, mcp-protocol-version");
+}
+
 function createMcpServer(aggregator: ToolAggregator): Server {
   const server = new Server(
     { name: "mcphub", version: VERSION },
@@ -73,6 +79,12 @@ export class McphubServer {
     const http = await import("http");
     this.httpServer = http.createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
+        setCors(res);
+        if (req.method === "OPTIONS") {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
         if (req.method === "GET" && req.url === "/health") {
           const failures = this.manager.getFailures();
           const body: Record<string, unknown> = { status: "ok" };
