@@ -6,6 +6,8 @@ import { withTimeout } from "../util.js";
 
 export class StdioBackend implements IBackend {
   private client: Client;
+  private closing = false;
+  onclose?: () => void;
 
   constructor(
     private name: string,
@@ -36,23 +38,29 @@ export class StdioBackend implements IBackend {
     Object.assign(env, this.config.env);
 
     try {
+      const transport = new StdioClientTransport({
+        command: this.config.command,
+        args: this.config.args || [],
+        cwd: this.config.cwd || process.cwd(),
+        env,
+      });
+      transport.onclose = () => {
+        if (!this.closing) this.onclose?.();
+      };
       await withTimeout(
-        this.client.connect(new StdioClientTransport({
-          command: this.config.command,
-          args: this.config.args || [],
-          cwd: this.config.cwd || process.cwd(),
-          env,
-        })),
+        this.client.connect(transport),
         30_000,
         `connect to stdio server "${this.name}"`
       );
     } catch (e) {
+      this.closing = true;
       await this.client.close().catch(() => {});
       throw e;
     }
   }
 
   async disconnect(): Promise<void> {
+    this.closing = true;
     await this.client.close();
   }
 

@@ -8,6 +8,8 @@ import { withTimeout } from "../util.js";
 export class HttpBackend implements IBackend {
   private client: Client;
   private authProvider: OAuthClientProvider | null = null;
+  private closing = false;
+  onclose?: () => void;
 
   constructor(
     private name: string,
@@ -34,21 +36,27 @@ export class HttpBackend implements IBackend {
     const tokens = await this.authProvider.tokens();
 
     try {
+      const transport = new StreamableHTTPClientTransport(
+        new URL(this.config.url),
+        tokens ? { authProvider: this.authProvider } : undefined
+      );
+      transport.onclose = () => {
+        if (!this.closing) this.onclose?.();
+      };
       await withTimeout(
-        this.client.connect(new StreamableHTTPClientTransport(
-          new URL(this.config.url),
-          tokens ? { authProvider: this.authProvider } : undefined
-        )),
+        this.client.connect(transport),
         30_000,
         `connect to http server "${this.name}"`
       );
     } catch (e) {
+      this.closing = true;
       await this.client.close().catch(() => {});
       throw e;
     }
   }
 
   async disconnect(): Promise<void> {
+    this.closing = true;
     await this.client.close();
   }
 

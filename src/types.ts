@@ -17,6 +17,7 @@ export interface HubConfig {
 export interface IBackend {
   getName(): string;
   getType(): "stdio" | "http";
+  onclose?: () => void;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   getTools(): Promise<{ name: string; description?: string; inputSchema?: Record<string, unknown> }[]>;

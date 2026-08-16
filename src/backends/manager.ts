@@ -21,6 +21,7 @@ export class McpClientManager {
         }
         const backend = this.createBackend(name, config);
         await backend.connect();
+        this.attachDeathHook(name, backend, config);
         this.backends.set(name, backend);
         this.failures.delete(name);
       })
@@ -51,6 +52,7 @@ export class McpClientManager {
       try {
         const backend = this.createBackend(name, config);
         await backend.connect();
+        this.attachDeathHook(name, backend, config);
         this.backends.set(name, backend);
         this.failures.delete(name);
         this.retryAttempts.delete(name);
@@ -97,6 +99,17 @@ export class McpClientManager {
     return new StdioBackend(name, config);
   }
 
+  private attachDeathHook(name: string, backend: IBackend, config: McpServerConfig): void {
+    backend.onclose = () => {
+      if (!this.backends.has(name)) return;
+      this.backends.delete(name);
+      const msg = `Backend "${name}" died, reconnecting`;
+      console.error(msg);
+      this.failures.set(name, { type: config.type, error: msg });
+      this.scheduleRetry(name, config);
+    };
+  }
+
   async syncConfig(oldServers: Record<string, McpServerConfig>, newServers: Record<string, McpServerConfig>): Promise<void> {
     const allNames = new Set([...Object.keys(oldServers), ...Object.keys(newServers)]);
     for (const name of allNames) {
@@ -124,6 +137,7 @@ export class McpClientManager {
       try {
         const backend = this.createBackend(name, newServer);
         await backend.connect();
+        this.attachDeathHook(name, backend, newServer);
         this.backends.set(name, backend);
         this.failures.delete(name);
         console.log(`Reconnected backend "${name}"`);
