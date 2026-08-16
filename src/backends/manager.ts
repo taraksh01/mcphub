@@ -24,6 +24,7 @@ export class McpClientManager {
         this.attachDeathHook(name, backend, config);
         this.backends.set(name, backend);
         this.failures.delete(name);
+        this.retryAttempts.delete(name);
       })
     );
 
@@ -140,6 +141,7 @@ export class McpClientManager {
         this.attachDeathHook(name, backend, newServer);
         this.backends.set(name, backend);
         this.failures.delete(name);
+        this.retryAttempts.delete(name);
         console.log(`Reconnected backend "${name}"`);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
