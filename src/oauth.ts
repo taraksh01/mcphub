@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import { createServer, type Server } from "http";
 import { homedir } from "os";
 import { join } from "path";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from "fs";
 import {
   auth,
   type OAuthClientProvider,
@@ -111,10 +111,15 @@ export class McphubOAuthProvider implements OAuthClientProvider {
     const server = createServer(() => {});
     const callbackPromise = this.waitForCallback(server);
     callbackPromise.catch(() => {});
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(CALLBACK_PORT, resolve);
-    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(CALLBACK_PORT, resolve);
+      });
+    } catch (e) {
+      try { server.close(); } catch {}
+      throw new Error(`Could not listen on port ${CALLBACK_PORT}: ${String(e)}`);
+    }
     try {
       const first = await auth(this, { serverUrl: this.serverUrl });
       if (first === "AUTHORIZED") {
@@ -146,7 +151,11 @@ export class McphubOAuthProvider implements OAuthClientProvider {
       server.on("close", () => clearTimeout(timeout));
       server.on("request", (req, res) => {
         const url = new URL(req.url ?? "/", CALLBACK_URL);
-        if (url.pathname !== "/callback") return;
+        if (url.pathname !== "/callback") {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("Not found");
+          return;
+        }
         clearTimeout(timeout);
         server.close();
         const error = url.searchParams.get("error");
@@ -194,6 +203,7 @@ export class McphubOAuthProvider implements OAuthClientProvider {
       rmSync(path, { force: true });
     } else {
       writeFileSync(path, JSON.stringify(data, null, 2));
+      chmodSync(path, 0o600);
     }
   }
 }

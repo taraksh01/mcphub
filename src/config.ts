@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, watch } from "fs";
 import { dirname, join, basename } from "path";
 import { HubConfig, McpServerConfig } from "./types.js";
 
@@ -32,36 +32,56 @@ export class ConfigManager {
 
   private load(): HubConfig {
     try {
-      const raw = readFileSync(this.configPath, "utf-8");
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed !== "object" || parsed === null) {
-        throw new Error("config must be a JSON object");
-      }
-      const merged = { ...DEFAULT_CONFIG, ...(parsed as Partial<HubConfig>) };
-      if (typeof merged.port !== "number") {
-        throw new Error('"port" must be a number');
-      }
-      const mcpServers = merged.mcpServers;
-      if (typeof mcpServers !== "object" || mcpServers === null || Array.isArray(mcpServers)) {
-        throw new Error('"mcpServers" must be an object');
-      }
-      for (const [name, server] of Object.entries(mcpServers)) {
-        if (typeof server !== "object" || server === null ||
-            (server.type !== "stdio" && server.type !== "http")) {
-          throw new Error(`invalid server entry "${name}"`);
-        }
-        if (server.disabledTools !== undefined &&
-            (!Array.isArray(server.disabledTools) ||
-             server.disabledTools.some((t) => typeof t !== "string"))) {
-          throw new Error(`"disabledTools" of server "${name}" must be an array of strings`);
-        }
-      }
-      return merged;
+      return this.parse(readFileSync(this.configPath, "utf-8"));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      if (e instanceof Error && "code" in e && (e as NodeJS.ErrnoException).code === "ENOENT") {
+        console.error(`Config file "${this.configPath}" not found, using defaults`);
+        return { ...DEFAULT_CONFIG };
+      }
       console.error(`Config file "${this.configPath}" is invalid (${msg}), using defaults`);
       return { ...DEFAULT_CONFIG };
     }
+  }
+
+  reload(): HubConfig | null {
+    try {
+      return this.parse(readFileSync(this.configPath, "utf-8"));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`Config file "${this.configPath}" is invalid (${msg}), keeping current config`);
+      return null;
+    }
+  }
+
+  private parse(raw: string): HubConfig {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) {
+      throw new Error("config must be a JSON object");
+    }
+    const merged = { ...DEFAULT_CONFIG, ...(parsed as Partial<HubConfig>) };
+    if (typeof merged.port !== "number") {
+      throw new Error('"port" must be a number');
+    }
+    const mcpServers = merged.mcpServers;
+    if (typeof mcpServers !== "object" || mcpServers === null || Array.isArray(mcpServers)) {
+      throw new Error('"mcpServers" must be an object');
+    }
+    for (const [name, server] of Object.entries(mcpServers)) {
+      if (name.includes(":")) {
+        throw new Error(`server name "${name}" must not contain ":"`);
+      }
+      if (typeof server !== "object" || server === null ||
+          (server.type !== "stdio" && server.type !== "http")) {
+        throw new Error(`invalid server entry "${name}"`);
+      }
+      if (server.disabledTools !== undefined &&
+          (!Array.isArray(server.disabledTools) ||
+           server.disabledTools.some((t) => typeof t !== "string"))) {
+        throw new Error(`"disabledTools" of server "${name}" must be an array of strings`);
+      }
+    }
+    return merged;
   }
 
   get(): HubConfig {
@@ -70,7 +90,9 @@ export class ConfigManager {
 
   save(): void {
     mkdirSync(dirname(this.configPath), { recursive: true });
-    writeFileSync(this.configPath, JSON.stringify(this.config, null, 2));
+    const tmp = `${this.configPath}.tmp`;
+    writeFileSync(tmp, JSON.stringify(this.config, null, 2));
+    renameSync(tmp, this.configPath);
   }
 
   updateServer(name: string, server: McpServerConfig): void {
@@ -118,13 +140,25 @@ export class ConfigManager {
       if (filename !== base) return;
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
       this.debounceTimer = setTimeout(() => {
-        this.config = this.load();
+        this.debounceTimer = null;
+        const next = this.reload();
+        if (!next) return;
+        this.config = next;
         callback(this.config);
       }, 500);
+    });
+    this.watcher.on("error", (err) => {
+      console.error("Config watcher error:", err.message);
+      this.stopWatching();
     });
   }
 
   stopWatching(): void {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
     this.watcher?.close();
+    this.watcher = null;
   }
 }

@@ -35,11 +35,43 @@ function removePid(): void {
   if (existsSync(file)) unlinkSync(file);
 }
 
+function runtimeFile(): string {
+  return join(dirname(config.getConfigPath()), "hub.runtime.json");
+}
+
+function readRuntime(): { port: number; host: string } | null {
+  try {
+    return JSON.parse(readFileSync(runtimeFile(), "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeRuntime(port: number, host: string): void {
+  mkdirSync(dirname(runtimeFile()), { recursive: true });
+  writeFileSync(runtimeFile(), JSON.stringify({ port, host }));
+}
+
+function removeRuntime(): void {
+  const f = runtimeFile();
+  if (existsSync(f)) unlinkSync(f);
+}
+
 async function stopHub(): Promise<void> {
   config = new ConfigManager(program.opts().config);
   const pid = readPid();
   if (!pid) {
     console.log("Hub not running");
+    return;
+  }
+  let isMcphub = false;
+  try {
+    const cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf-8");
+    isMcphub = cmdline.includes("mcphub");
+  } catch {}
+  if (!isMcphub) {
+    removePid();
+    console.log(`PID ${pid} is not an mcphub process, cleaned up stale PID file`);
     return;
   }
   try {
@@ -48,14 +80,28 @@ async function stopHub(): Promise<void> {
       await new Promise(r => setTimeout(r, 200));
       try { process.kill(pid, 0); } catch {
         removePid();
+        removeRuntime();
         console.log(`Hub stopped (PID: ${pid})`);
         return;
       }
     }
-    console.error("Hub did not stop within 4s, force removing PID");
+    console.error("Hub did not stop within 4s, sending SIGKILL");
+    process.kill(pid, "SIGKILL");
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 200));
+      try { process.kill(pid, 0); } catch {
+        removePid();
+        removeRuntime();
+        console.log(`Hub force-stopped (PID: ${pid})`);
+        return;
+      }
+    }
     removePid();
+    removeRuntime();
+    console.error("Hub still alive after SIGKILL, removed stale PID file");
   } catch {
     removePid();
+    removeRuntime();
     console.log("Hub process not found, cleaned up PID file");
   }
 }
@@ -65,15 +111,46 @@ async function startDaemon(port: number, host: string): Promise<void> {
   const args = ["start", "--port", String(port), "--host", host];
   const cfgPath = program.opts().config || process.env.MCPHUB_CONFIG;
   if (cfgPath) args.push("--config", cfgPath);
-  const logPath = join(dirname(config.getConfigPath()), "hub.log");
+  const hubDir = dirname(config.getConfigPath());
+  mkdirSync(hubDir, { recursive: true });
+  const logPath = join(hubDir, "hub.log");
   const logFd = openSync(logPath, "a");
   const child = fork(process.argv[1], args, {
     detached: true,
     stdio: ["ignore", logFd, logFd, "ipc"],
   });
   child.unref();
-  mkdirSync(dirname(pidFile()), { recursive: true });
+  let childFailed = false;
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.removeAllListeners("message");
+      child.removeAllListeners("error");
+      child.removeAllListeners("exit");
+      resolve();
+    };
+    const timeout = setTimeout(() => {
+      console.error("Daemon did not send ready within 5s, proceeding anyway");
+      finish();
+    }, 5000);
+    child.once("message", (msg: { type?: string }) => {
+      if (msg?.type === "ready") finish();
+      if (msg?.type === "error") { childFailed = true; finish(); }
+    });
+    child.once("error", finish);
+    child.once("exit", finish);
+  });
+  if (childFailed) {
+    console.error("Hub failed to start (check port and config)");
+    removePid();
+    process.exit(1);
+  }
+  mkdirSync(hubDir, { recursive: true });
   writeFileSync(pidFile(), String(child.pid));
+  writeRuntime(port, host);
   console.log(`Hub started as daemon (PID: ${child.pid}, logs: ${logPath})`);
   process.exit(0);
 }
@@ -136,6 +213,9 @@ program
       process.exit(1);
     }
     const host = options.host ?? "127.0.0.1";
+    if (host !== "127.0.0.1" && host !== "::1" && host !== "localhost") {
+      console.warn(`WARNING: binding to ${host} exposes all MCP tools without authentication`);
+    }
 
     if (options.daemon) {
       await startDaemon(port, host);
@@ -152,6 +232,7 @@ program
       console.log("\nShutting down...");
       config.stopWatching();
       removePid();
+      removeRuntime();
       await manager.disconnectAll();
       await server.stop();
       process.exit(0);
@@ -161,9 +242,17 @@ program
     process.on("SIGTERM", shutdown);
 
     await manager.connectAll(cfg.mcpServers);
-    await server.start(port, host);
+    try {
+      await server.start(port, host);
+    } catch (err) {
+      if (process.send) {
+        try { (process as { send: (m: unknown) => void }).send({ type: "error" }); } catch {}
+      }
+      throw err;
+    }
 
     writePid();
+    writeRuntime(port, host);
 
     config.startWatching(async (newConfig) => {
       console.log("\nConfig changed, syncing backends...");
@@ -187,26 +276,10 @@ program
     config = new ConfigManager(program.opts().config);
     const port = options.port ?? config.get().port ?? 5431;
     const pid = readPid();
-    if (!pid) {
-      console.log("Hub not running");
-    } else {
-      try {
-        process.kill(pid, "SIGTERM");
-        for (let i = 0; i < 50; i++) {
-          await new Promise(r => setTimeout(r, 200));
-          try { process.kill(pid, 0); } catch {
-            removePid();
-            console.log(`Hub stopped (PID: ${pid})`);
-            break;
-          }
-        }
-        try { process.kill(pid, 0); console.error("Hub did not stop within 10s, force removing PID"); removePid(); } catch {}
-      } catch {
-        removePid();
-        console.log("Hub process not found, cleaned up PID file");
-      }
-    }
-    await startDaemon(port, "127.0.0.1");
+    const runtime = pid ? readRuntime() : null;
+    const host = runtime?.host ?? "127.0.0.1";
+    await stopHub();
+    await startDaemon(port, host);
   });
 
 program
@@ -217,6 +290,10 @@ program
   .option("-e, --env <env...>", "Environment variables (KEY=VALUE)")
   .action((name, options) => {
     config = new ConfigManager(program.opts().config);
+    if (name.includes(":")) {
+      console.error(`Server name must not contain ":": "${name}"`);
+      process.exit(1);
+    }
     const env: Record<string, string> = {};
     if (options.env) {
       for (const e of options.env) {
@@ -227,6 +304,10 @@ program
         }
         env[e.slice(0, idx)] = e.slice(idx + 1);
       }
+    }
+
+    if (config.get().mcpServers[name]) {
+      console.warn(`Server "${name}" already exists, overwriting`);
     }
 
     if (options.stdio !== undefined && options.url !== undefined) {
@@ -373,7 +454,10 @@ program
     }
     console.log("Hub is running");
     console.log(`PID: ${pid}`);
-    console.log(`Port: ${config.get().port}`);
+    const runtime = readRuntime();
+    const port = runtime?.port ?? config.get().port;
+    console.log(`Port: ${port}`);
+    console.log(`Host: ${runtime?.host ?? "127.0.0.1"}`);
     try {
       process.kill(pid, 0);
     } catch {
@@ -392,7 +476,7 @@ program
         }
       }
       try {
-        const health = await fetch(`http://localhost:${config.get().port}/health`).then(r => r.json());
+        const health = await fetch(`http://localhost:${port}/health`).then(r => r.json());
         if (health.failures?.length > 0) {
           console.log(`\nFailed backends (${health.failures.length}):`);
           for (const f of health.failures) {

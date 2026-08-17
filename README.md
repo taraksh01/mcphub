@@ -74,7 +74,15 @@ The hub listens on `http://localhost:5431/mcp` by default. Override with `--port
 mcphub start --port 8080
 ```
 
-Servers that fail to connect at start are retried automatically at 5s, 10s, and 20s, then given up. Failed backends are shown in `mcphub status` (via `GET /health`).
+Bind to all interfaces (exposes every tool on the network, unauthenticated — use only on trusted networks):
+
+```sh
+mcphub start --host 0.0.0.0
+```
+
+A `restart` restores the host the running hub was bound to.
+
+Servers that fail to connect at start are retried automatically at 5s, 10s, and 20s, then given up. If a backend dies after connecting, it is reconnected automatically. Failed backends are shown in `mcphub status` (via `GET /health`).
 
 Health check at `GET /health` returns `{ "status": "ok" }`, plus a `failures` list when any backend is down.
 
@@ -159,6 +167,19 @@ mcphub add gh_grep --url https://mcp.grep.app
 
 Disable a server without removing it by setting `"enabled": false` in the config, or via `mcphub disable <name>` / `mcphub enable <name>` (multiple names accepted). Disabled servers show a `[disabled]` marker in `mcphub list` and `mcphub status`, and are skipped on start — toggling takes effect immediately if the hub is running.
 
+## Per-tool control
+
+Hide individual tools without removing the whole server. Disabled tools are marked `[disabled]` in `mcphub tools` and are filtered out of `tools/list`; calling one returns an error. The state is stored under `"disabledTools"` in the server's config entry and takes effect immediately if the hub is running.
+
+```sh
+# List every tool across all servers, with disabled state
+mcphub tools
+
+# Disable / re-enable a single tool
+mcphub tools disable my-server some_tool
+mcphub tools enable my-server some_tool
+```
+
 ## OAuth-protected HTTP servers
 
 Some remote MCP servers (e.g. Cloudflare) require OAuth. Authenticate once — the hub stores the tokens and refreshes them automatically on reconnect:
@@ -205,7 +226,10 @@ Commands:
   add [options] <name>    Add a server
   remove <name>           Remove a server
   list                    List configured servers
-  status                  Show hub status (PID, port, servers)
+  tools                   List tools across servers, with disabled state
+  tools disable <server> <tool>   Disable an individual tool
+  tools enable <server> <tool>     Re-enable a disabled tool
+  status                  Show hub status (PID, port, host, servers)
   auth <name>             Authenticate an OAuth-protected HTTP server
   enable <names...>       Enable servers
   disable <names...>      Disable servers (keeps config, skips them at start)

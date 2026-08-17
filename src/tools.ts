@@ -21,6 +21,10 @@ export class ToolAggregator {
   async getAllTools(includeDisabled = false): Promise<NamespacedTool[]> {
     const tools: NamespacedTool[] = [];
     const backends = this.manager.getAllBackends();
+    const liveNames = new Set(backends.map((b) => b.getName()));
+    for (const key of this.cache.keys()) {
+      if (!liveNames.has(key)) this.cache.delete(key);
+    }
     const disabled = (name: string) => new Set(this.getDisabledTools(name));
 
     for (const backend of backends) {

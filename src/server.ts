@@ -10,6 +10,12 @@ import { VERSION } from "./version.js";
 import type { IncomingMessage, ServerResponse } from "http";
 import { randomUUID } from "crypto";
 
+function setCors(res: ServerResponse): void {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id, mcp-protocol-version");
+}
+
 function createMcpServer(aggregator: ToolAggregator): Server {
   const server = new Server(
     { name: "mcphub", version: VERSION },
@@ -56,7 +62,7 @@ interface SessionEntry {
   transport: StreamableHTTPServerTransport;
   server: Server;
   lastActivity: number;
-  hasOpenStream: boolean;
+  openStreams: number;
 }
 
 export class McphubServer {
@@ -73,6 +79,12 @@ export class McphubServer {
     const http = await import("http");
     this.httpServer = http.createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
+        setCors(res);
+        if (req.method === "OPTIONS") {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
         if (req.method === "GET" && req.url === "/health") {
           const failures = this.manager.getFailures();
           const body: Record<string, unknown> = { status: "ok" };
@@ -94,7 +106,7 @@ export class McphubServer {
               const transport = new StreamableHTTPServerTransport({
                 sessionIdGenerator: () => randomUUID(),
                 onsessioninitialized: (sid) => {
-                  this.sessions.set(sid, { transport, server, lastActivity: Date.now(), hasOpenStream: false });
+                  this.sessions.set(sid, { transport, server, lastActivity: Date.now(), openStreams: 0 });
                 },
                 onsessionclosed: (sid) => {
                   this.sessions.delete(sid);
@@ -110,16 +122,16 @@ export class McphubServer {
                   }
                 }
               };
-              session = { transport, server, lastActivity: Date.now(), hasOpenStream: false };
+              session = { transport, server, lastActivity: Date.now(), openStreams: 0 };
               await server.connect(transport);
             }
 
             const { transport, server } = session;
             session.lastActivity = Date.now();
             if (req.method === "GET") {
-              session.hasOpenStream = true;
+              session.openStreams++;
               res.on("close", () => {
-                session.hasOpenStream = false;
+                session.openStreams--;
               });
             }
             let parsed: unknown;
@@ -170,8 +182,14 @@ export class McphubServer {
       }
     );
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
+      const onError = (err: Error) => reject(err);
+      this.httpServer!.once("error", onError);
       this.httpServer!.listen(port, host, () => {
+        this.httpServer!.off("error", onError);
+        if (process.send) {
+          try { (process as { send: (m: unknown) => void }).send({ type: "ready" }); } catch {}
+        }
         console.log(`MCP Hub running on http://${host}:${port}/mcp`);
         resolve();
       });
@@ -179,7 +197,7 @@ export class McphubServer {
       this.sweepTimer = setInterval(() => {
         const now = Date.now();
         for (const [sid, entry] of this.sessions) {
-          if (!entry.hasOpenStream && now - entry.lastActivity > SESSION_IDLE_TTL_MS) {
+          if (entry.openStreams === 0 && now - entry.lastActivity > SESSION_IDLE_TTL_MS) {
             this.sessions.delete(sid);
             entry.server.close().catch(() => {});
             entry.transport.close();

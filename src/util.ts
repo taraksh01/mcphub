@@ -12,10 +12,46 @@ export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, lab
 
 export function tokenizeCommand(input: string): string[] {
   const tokens: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(input)) !== null) {
-    tokens.push(m[1] ?? m[2] ?? m[3]);
+  let current = "";
+  let inSingle = false;
+  let inDouble = false;
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i];
+    if (inSingle) {
+      if (ch === "'") {
+        inSingle = false;
+      } else {
+        current += ch;
+      }
+    } else if (inDouble) {
+      if (ch === "\\") {
+        const next = input[i + 1];
+        if (next === '"' || next === "\\") {
+          current += next;
+          i += 2;
+          continue;
+        }
+        current += ch;
+      } else if (ch === '"') {
+        inDouble = false;
+      } else {
+        current += ch;
+      }
+    } else if (ch === "'") {
+      inSingle = true;
+    } else if (ch === '"') {
+      inDouble = true;
+    } else if (ch === " " || ch === "\t") {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = "";
+      }
+    } else {
+      current += ch;
+    }
+    i++;
   }
+  if (current.length > 0) tokens.push(current);
   return tokens;
 }
