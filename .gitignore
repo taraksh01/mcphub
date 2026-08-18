@@ -4,3 +4,4 @@ config.json
 hub.pid
 *.log
 .playwright-mcp
+hub.runtime.json
