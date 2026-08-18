@@ -524,9 +524,10 @@ program
 program
   .command("install-service")
   .description("Install as a boot-time service (systemd/launchd/schtasks)")
-  .action(() => {
+  .option("--pin-version", "Pin to exact version (won't auto-update on version bump)")
+  .action((options) => {
     config = new ConfigManager(program.opts().config);
-    installService(config);
+    installService(config, options.pinVersion);
   });
 
 program
