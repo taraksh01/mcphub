@@ -130,11 +130,23 @@ export class McphubServer {
                   }
                 }
               };
+              try {
+                await server.connect(transport);
+              } catch (e) {
+                if (sessionId) {
+                  this.sessions.delete(sessionId);
+                }
+                throw e;
+              }
               session = { transport, server, lastActivity: Date.now(), openStreams: 0 };
               if (sessionId) {
                 this.sessions.set(sessionId, session);
+              } else {
+                const generatedSid = transport.sessionId;
+                if (generatedSid) {
+                  this.sessions.set(generatedSid, session);
+                }
               }
-              await server.connect(transport);
             }
 
             const { transport, server: mcpServer } = session;
