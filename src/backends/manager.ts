@@ -2,6 +2,22 @@ import { McpServerConfig, IBackend } from "../types.js";
 import { StdioBackend } from "./stdio.js";
 import { HttpBackend } from "./http.js";
 
+export function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  if (typeof a !== "object" || typeof b !== "object") return false;
+
+  const keysA = Object.keys(a as Record<string, unknown>);
+  const keysB = Object.keys(b as Record<string, unknown>);
+  if (keysA.length !== keysB.length) return false;
+
+  for (const key of keysA) {
+    if (!keysB.includes(key)) return false;
+    if (!deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
+  }
+  return true;
+}
+
 export class McpClientManager {
   private backends: Map<string, IBackend> = new Map();
   private failures: Map<string, { type: "stdio" | "http"; error: string }> = new Map();
@@ -133,14 +149,14 @@ export class McpClientManager {
         console.log(`Skipping disabled backend "${name}"`);
         continue;
       }
+if (oldServer && deepEqual(oldServer, newServer)) continue;
       // Only disabledTools changed → no reconnect needed (filtered at list/call time)
       if (oldServer &&
-          JSON.stringify(oldServer) !== JSON.stringify(newServer) &&
+          !deepEqual(oldServer, newServer) &&
           McpClientManager.serversEquivalentExceptTools(oldServer, newServer)) {
         console.log(`Updated disabled tools for backend "${name}" (no reconnect needed)`);
         continue;
-      }
-      if (oldServer && JSON.stringify(oldServer) === JSON.stringify(newServer)) continue;
+}
       this.clearRetry(name);
       const existing = this.backends.get(name);
       if (existing) { try { await existing.disconnect(); } catch {} this.backends.delete(name); }
