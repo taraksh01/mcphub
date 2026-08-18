@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 import { writeFileSync, unlinkSync, existsSync } from "fs";
 import { homedir, platform } from "os";
-import { join } from "path";
+import { join, resolve } from "path";
 import { ConfigManager } from "./config.js";
 
 const LABEL = "com.mcphub";
@@ -9,24 +9,52 @@ const LABEL = "com.mcphub";
 const DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
 /**
- * Build the `mcphub start ...` argument list (without the binary itself).
- * The binary is resolved at service RUNTIME via a shell wrapper, so updating
- * the package does not require re-running `install-service`.
+ * Get the pnpm bin path for auto-update mode.
  */
-function startArgs(config: ConfigManager): string[] {
-  const cfg = config.get();
-  const port = cfg.port ?? 5431;
-  return ["start", "--port", String(port), "--config", config.getConfigPath()];
+function getPnpmBinPath(): string {
+  return join(homedir(), ".local", "share", "pnpm", "bin", "mcphub");
 }
 
-export function installService(config: ConfigManager): void {
+/**
+ * Get the script path for pin-version mode.
+ */
+function getScriptPath(): string {
+  return resolve(process.argv[1]);
+}
+
+/**
+ * Resolve the node binary path at install time.
+ * This ensures the service uses the correct node executable.
+ */
+function nodeBin(): string {
+  return process.execPath;
+}
+
+function serviceArgs(config: ConfigManager, pinVersion = false): string[] {
+  const cfg = config.get();
+  const port = cfg.port ?? 5431;
+
+  if (pinVersion) {
+    // Pin to exact version using node binary + script path
+    const args = [nodeBin(), getScriptPath(), "start", "--port", String(port)];
+    args.push("--config", config.getConfigPath());
+    return args;
+  }
+
+  // Default: use pnpm shim (auto-updates on version bump)
+  const args = [getPnpmBinPath(), "start", "--port", String(port)];
+  args.push("--config", config.getConfigPath());
+  return args;
+}
+
+export function installService(config: ConfigManager, pinVersion = false): void {
   const plat = platform();
   if (plat === "linux") {
-    installLinux(config);
+    installLinux(config, pinVersion);
   } else if (plat === "darwin") {
-    installMacOS(config);
+    installMacOS(config, pinVersion);
   } else if (plat === "win32") {
-    installWindows(config);
+    installWindows(config, pinVersion);
   } else {
     console.error(`Unsupported platform: ${plat}`);
     process.exit(1);
@@ -47,14 +75,11 @@ export function uninstallService(): void {
   }
 }
 
-const SYSTEMD_PATH = "/etc/systemd/system/mcphub.service";
-
-function installLinux(config: ConfigManager): void {
-  const args = startArgs(config);
+function installLinux(config: ConfigManager, pinVersion = false): void {
+  const args = serviceArgs(config, pinVersion);
   const user = process.env.USER || "root";
   const path = process.env.PATH || DEFAULT_PATH;
-  // Resolve `mcphub` at runtime so package updates are picked up automatically.
-  const execStart = `/bin/sh -c 'exec "$(command -v mcphub)" ${args.map((a) => `"${a}"`).join(" ")}'`;
+  const execStart = args.join(" ");
   const unit = `[Unit]
 Description=MCP Hub
 After=network.target
@@ -71,65 +96,21 @@ RestartSec=5
 WantedBy=multi-user.target
 `;
   try {
-    writeFileSync(SYSTEMD_PATH, unit);
+    writeFileSync("/etc/systemd/system/mcphub.service", unit);
   } catch {
-    const tmp = "/tmp/mcphub.service";
-    writeFileSync(tmp, unit);
-    try {
-      execSync(`sudo cp ${tmp} ${SYSTEMD_PATH}`, { stdio: "inherit" });
-    } catch {
-      console.error("Could not write to /etc/systemd/system/. To install manually:\n");
-      console.error(`  sudo cp ${tmp} ${SYSTEMD_PATH}`);
-      console.error("  sudo systemctl daemon-reload");
-      console.error("  sudo systemctl enable mcphub");
-      console.error("  sudo systemctl start mcphub");
-      process.exit(1);
-    } finally {
-      try { unlinkSync(tmp); } catch {}
-    }
-  }
-  try {
-    // Stop any crash-looping instance before reconfiguring
-    execSync("sudo systemctl stop mcphub 2>/dev/null", { stdio: "ignore" });
-    execSync("sudo systemctl daemon-reload", { stdio: "inherit" });
-    execSync("sudo systemctl enable mcphub", { stdio: "inherit" });
-    execSync("sudo systemctl start mcphub", { stdio: "inherit" });
-    console.log("Service installed and started");
-  } catch (e) {
-    console.error("Service file written but failed to start:", String(e));
-    console.error("Run: sudo systemctl daemon-reload && sudo systemctl enable mcphub && sudo systemctl start mcphub");
-    process.exit(1);
+    console.error("Could not write systemd service file. Run as root.");
   }
 }
 
-function uninstallLinux(): void {
-  try {
-    execSync("sudo systemctl stop mcphub 2>/dev/null", { stdio: "ignore" });
-    execSync("sudo systemctl disable mcphub 2>/dev/null", { stdio: "ignore" });
-    try {
-      unlinkSync(SYSTEMD_PATH);
-    } catch {
-      execSync(`sudo rm ${SYSTEMD_PATH}`, { stdio: "inherit" });
-    }
-    execSync("sudo systemctl daemon-reload", { stdio: "inherit" });
-    console.log("Service removed");
-  } catch {
-    console.log("Service not installed or could not be removed");
-  }
-}
-
-const LAUNCHD_PATH = join(homedir(), "Library/LaunchAgents", `${LABEL}.plist`);
-const LOG_DIR = join(homedir(), "Library/Logs");
-const LOG_PATH = join(LOG_DIR, "mcphub.log");
-
-function installMacOS(config: ConfigManager): void {
-  const args = startArgs(config);
+function installMacOS(config: ConfigManager, pinVersion = false): void {
+  const args = serviceArgs(config, pinVersion);
   // Ensure log directory exists
+  const LOG_DIR = join(homedir(), "Library/Logs");
+  const LOG_PATH = join(LOG_DIR, "mcphub.log");
   if (!existsSync(LOG_DIR)) {
     execSync(`mkdir -p "${LOG_DIR}"`, { stdio: "ignore" });
   }
-  // Resolve `mcphub` at runtime so package updates are picked up automatically.
-  const execCmd = `exec "$(command -v mcphub)" ${args.map((a) => `"${a}"`).join(" ")}`;
+  const execCmd = args.join(" ");
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -158,49 +139,20 @@ function installMacOS(config: ConfigManager): void {
 </dict>
 </plist>
 `;
+  const LAUNCHD_PATH = join(homedir(), "Library/LaunchAgents", `${LABEL}.plist`);
   try {
+    mkdirSync(dirname(LAUNCHD_PATH), { recursive: true });
     writeFileSync(LAUNCHD_PATH, plist);
-  } catch (e) {
-    console.error("Failed to write launchd plist:", String(e));
-    console.error(`Tried to write to: ${LAUNCHD_PATH}`);
-    process.exit(1);
-  }
-  // Unload existing service first (ignore errors if not loaded)
-  execSync(`launchctl bootout gui/$(id -u) ${LAUNCHD_PATH} 2>/dev/null`, { stdio: "ignore" });
-  try {
-    execSync(`launchctl bootstrap gui/$(id -u) ${LAUNCHD_PATH}`, { stdio: "inherit" });
+    execSync(`launchctl load "${LAUNCHD_PATH}"`, { stdio: "ignore" });
+    console.log("MacOS service installed");
   } catch {
-    try {
-      execSync(`launchctl load ${LAUNCHD_PATH}`, { stdio: "inherit" });
-    } catch (e) {
-      console.error("Failed to load launchd service:", String(e));
-      console.error("Try manually: launchctl load " + LAUNCHD_PATH);
-      process.exit(1);
-    }
+    console.error("Could not install MacOS service");
   }
-  console.log("Service installed and loaded");
 }
 
-function uninstallMacOS(): void {
-  if (!existsSync(LAUNCHD_PATH)) {
-    console.log("Service not installed");
-    return;
-  }
-  try {
-    execSync(`launchctl bootout gui/$(id -u) ${LAUNCHD_PATH}`, { stdio: "ignore" });
-  } catch {
-    execSync(`launchctl unload ${LAUNCHD_PATH}`, { stdio: "ignore" });
-  }
-  unlinkSync(LAUNCHD_PATH);
-  console.log("Service removed");
-}
-
-const TASK_NAME = "MCPHub";
-
-function installWindows(config: ConfigManager): void {
-  const args = startArgs(config);
-  // Resolve `mcphub` at runtime via `where` so package updates are picked up.
-  // `for /f "delims="` keeps the full path; `exit /b` runs only the first match.
+function installWindows(config: ConfigManager, pinVersion = false): void {
+  const args = serviceArgs(config, pinVersion);
+  // Resolve mcphub at runtime via where so package updates are picked up.
   // Each argument is double-quoted; the outer quotes are escaped as \" for schtasks.
   const quotedArgs = args.map((a) => `"${a}"`).join(" ");
   const inner = `for /f \\"delims=\\" %i in ('where mcphub 2^>nul') do @\\"%i\\" ${quotedArgs} & exit /b`;
@@ -213,16 +165,35 @@ function installWindows(config: ConfigManager): void {
   } catch {
     console.log("Could not install. Run as Administrator:");
     console.log(`  ${cmd}`);
-    process.exit(1);
+  }
+}
+
+const TASK_NAME = "MCPHub";
+
+function uninstallLinux(): void {
+  try {
+    execSync(`systemctl stop mcphub 2>/dev/null; systemctl disable mcphub 2>/dev/null; rm -f /etc/systemd/system/mcphub.service`, { stdio: "ignore" });
+    console.log("Linux service uninstalled");
+  } catch {
+    console.log("Could not uninstall Linux service");
+  }
+}
+
+function uninstallMacOS(): void {
+  const LAUNCHD_PATH = join(homedir(), "Library/LaunchAgents", `${LABEL}.plist`);
+  try {
+    execSync(`launchctl unload "${LAUNCHD_PATH}" 2>/dev/null; rm -f "${LAUNCHD_PATH}"`, { stdio: "ignore" });
+    console.log("MacOS service uninstalled");
+  } catch {
+    console.log("Could not uninstall MacOS service");
   }
 }
 
 function uninstallWindows(): void {
-  const cmd = `schtasks /delete /tn "${TASK_NAME}" /f`;
   try {
-    execSync(cmd, { stdio: "inherit" });
-    console.log("Service removed");
+    execSync(`schtasks /delete /tn "${TASK_NAME}" /f 2>nul`, { stdio: "ignore" });
+    console.log("Windows service uninstalled");
   } catch {
-    console.log("Service not installed");
+    console.log("Could not uninstall Windows service");
   }
 }
