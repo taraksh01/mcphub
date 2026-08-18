@@ -4,95 +4,108 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { ConfigManager } from "../config.js";
 
-const TEST_DIR = join(tmpdir(), `mcphub-test-${Date.now()}`);
-const TEST_CONFIG = join(TEST_DIR, "config.json");
+function createTestDir(): { dir: string; config: string } {
+  const dir = join(tmpdir(), `mcphub-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(dir, { recursive: true });
+  return { dir, config: join(dir, "config.json") };
+}
 
-beforeEach(() => {
-  mkdirSync(TEST_DIR, { recursive: true });
-});
-
-afterEach(() => {
-  rmSync(TEST_DIR, { recursive: true, force: true });
-});
-
-describe("ConfigManager", () => {
+describe.sequential("ConfigManager", () => {
   describe("load - Fix #8 (ENOENT silent defaults)", () => {
     it("returns defaults when config file does not exist", () => {
-      const mgr = new ConfigManager(join(TEST_DIR, "nonexistent.json"));
+      const { dir, config } = createTestDir();
+      const mgr = new ConfigManager(join(dir, "nonexistent.json"));
       expect(mgr.get().port).toBe(5431);
       expect(mgr.get().mcpServers).toEqual({});
+      rmSync(dir, { recursive: true, force: true });
     });
 
     it("returns defaults when config is invalid JSON", () => {
-      writeFileSync(TEST_CONFIG, "not json");
-      const mgr = new ConfigManager(TEST_CONFIG);
+      const { dir, config } = createTestDir();
+      writeFileSync(config, "not json");
+      const mgr = new ConfigManager(config);
       expect(mgr.get().port).toBe(5431);
+      rmSync(dir, { recursive: true, force: true });
     });
 
     it("loads valid config", () => {
-      writeFileSync(TEST_CONFIG, JSON.stringify({ port: 8080, mcpServers: {} }));
-      const mgr = new ConfigManager(TEST_CONFIG);
+      const { dir, config } = createTestDir();
+      writeFileSync(config, JSON.stringify({ port: 8080, mcpServers: {} }));
+      const mgr = new ConfigManager(config);
       expect(mgr.get().port).toBe(8080);
+      rmSync(dir, { recursive: true, force: true });
     });
   });
 
   describe("parse - Fix #7 (reject ':' in server names)", () => {
     it("rejects server names with colons", () => {
-      writeFileSync(TEST_CONFIG, JSON.stringify({
+      const { dir, config } = createTestDir();
+      writeFileSync(config, JSON.stringify({
         port: 5431,
         mcpServers: { "bad:name": { type: "stdio", command: "echo" } },
       }));
-      const mgr = new ConfigManager(TEST_CONFIG);
+      const mgr = new ConfigManager(config);
       expect(mgr.get().mcpServers).toEqual({});
+      rmSync(dir, { recursive: true, force: true });
     });
 
     it("accepts valid server names", () => {
-      writeFileSync(TEST_CONFIG, JSON.stringify({
+      const { dir, config } = createTestDir();
+      writeFileSync(config, JSON.stringify({
         port: 5431,
         mcpServers: { "my-server": { type: "stdio", command: "echo" } },
       }));
-      const mgr = new ConfigManager(TEST_CONFIG);
+      const mgr = new ConfigManager(config);
       expect(mgr.get().mcpServers["my-server"]).toBeDefined();
+      rmSync(dir, { recursive: true, force: true });
     });
   });
 
   describe("reload - Fix #5 (tolerant reload)", () => {
     it("returns null and keeps current config on invalid reload", () => {
-      writeFileSync(TEST_CONFIG, JSON.stringify({ port: 9999, mcpServers: {} }));
-      const mgr = new ConfigManager(TEST_CONFIG);
+      const { dir, config } = createTestDir();
+      writeFileSync(config, JSON.stringify({ port: 9999, mcpServers: {} }));
+      const mgr = new ConfigManager(config);
       expect(mgr.get().port).toBe(9999);
 
-      writeFileSync(TEST_CONFIG, "invalid!!!");
+      writeFileSync(config, "invalid!!!");
       const result = mgr.reload();
       expect(result).toBeNull();
       expect(mgr.get().port).toBe(9999);
+      rmSync(dir, { recursive: true, force: true });
     });
 
     it("returns new config on valid reload", () => {
-      writeFileSync(TEST_CONFIG, JSON.stringify({ port: 9999, mcpServers: {} }));
-      const mgr = new ConfigManager(TEST_CONFIG);
+      const { dir, config } = createTestDir();
+      writeFileSync(config, JSON.stringify({ port: 9999, mcpServers: {} }));
+      const mgr = new ConfigManager(config);
       expect(mgr.get().port).toBe(9999);
 
-      writeFileSync(TEST_CONFIG, JSON.stringify({ port: 7777, mcpServers: {} }));
+      writeFileSync(config, JSON.stringify({ port: 7777, mcpServers: {} }));
       const result = mgr.reload();
       expect(result).not.toBeNull();
       expect(result!.port).toBe(7777);
+      rmSync(dir, { recursive: true, force: true });
     });
   });
 
   describe("stopWatching - Fix #12 (clear debounce)", () => {
     it("can be called without error even if never started", () => {
-      const mgr = new ConfigManager(TEST_CONFIG);
+      const { dir, config } = createTestDir();
+      const mgr = new ConfigManager(config);
       expect(() => mgr.stopWatching()).not.toThrow();
+      rmSync(dir, { recursive: true, force: true });
     });
   });
 
   describe("atomic save", () => {
     it("saves config atomically via tmp file", () => {
-      const mgr = new ConfigManager(TEST_CONFIG);
+      const { dir, config } = createTestDir();
+      const mgr = new ConfigManager(config);
       mgr.updateServer("test", { type: "stdio", command: "echo" });
-      const reloaded = new ConfigManager(TEST_CONFIG);
+      const reloaded = new ConfigManager(config);
       expect(reloaded.get().mcpServers["test"]).toBeDefined();
+      rmSync(dir, { recursive: true, force: true });
     });
   });
 
@@ -145,7 +158,7 @@ describe("ConfigManager", () => {
       }));
       const mgr = new ConfigManager(f);
       expect(mgr.get().mcpServers["s"]).toBeDefined();
-    });
+    }
   });
 
   describe("parse - rejects invalid structure", () => {
@@ -161,7 +174,64 @@ describe("ConfigManager", () => {
       writeFileSync(f, JSON.stringify({ port: 5431, mcpServers: [] }));
       const mgr = new ConfigManager(f);
       expect(mgr.get().mcpServers).toEqual({});
+    }
+  });
+
+  describe("parse - new validation rules", () => {
+    it("rejects stdio server without command", () => {
+      const { dir, config } = createTestDir();
+      writeFileSync(config, JSON.stringify({
+        port: 5431,
+        mcpServers: { "test": { type: "stdio" } },
+      }));
+      const mgr = new ConfigManager(config);
+      expect(mgr.get().mcpServers).toEqual({});
+      rmSync(dir, { recursive: true, force: true });
     });
+
+    it("rejects http server without url", () => {
+      const { dir, config } = createTestDir();
+      writeFileSync(config, JSON.stringify({
+        port: 5431,
+        mcpServers: { "test": { type: "http" } },
+      }));
+      const mgr = new ConfigManager(config);
+      expect(mgr.get().mcpServers).toEqual({});
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("rejects http server with invalid url", () => {
+      const { dir, config } = createTestDir();
+      writeFileSync(config, JSON.stringify({
+        port: 5431,
+        mcpServers: { "test": { type: "http", url: "not-a-url" } },
+      }));
+      const mgr = new ConfigManager(config);
+      expect(mgr.get().mcpServers).toEqual({});
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("accepts valid stdio server with command", () => {
+      const { dir, config } = createTestDir();
+      writeFileSync(config, JSON.stringify({
+        port: 5431,
+        mcpServers: { "test": { type: "stdio", command: "echo" } },
+      }));
+      const mgr = new ConfigManager(config);
+      expect(mgr.get().mcpServers["test"]).toBeDefined();
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("accepts valid http server with url", () => {
+      const { dir, config } = createTestDir();
+      writeFileSync(config, JSON.stringify({
+        port: 5431,
+        mcpServers: { "test": { type: "http", url: "https://example.com/mcp" } },
+      }));
+      const mgr = new ConfigManager(config);
+      expect(mgr.get().mcpServers["test"]).toBeDefined();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   describe("mutations", () => {
@@ -190,8 +260,8 @@ describe("ConfigManager", () => {
       mgr.removeServer("s");
       const reloaded = new ConfigManager(TEST_CONFIG);
       expect(reloaded.get().mcpServers["s"]).toBeUndefined();
-    });
-  });
+    }
+  );
 
   describe("startWatching - Fix #5 (reload callback)", () => {
     it("invokes callback with new config on file change", async () => {
@@ -203,6 +273,6 @@ describe("ConfigManager", () => {
       await new Promise((r) => setTimeout(r, 800));
       mgr.stopWatching();
       expect(seen).toContain(5555);
-    });
+    }
   });
 });
