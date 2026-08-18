@@ -37,10 +37,10 @@ export class ConfigManager {
       const msg = e instanceof Error ? e.message : String(e);
       if (e instanceof Error && "code" in e && (e as NodeJS.ErrnoException).code === "ENOENT") {
         console.error(`Config file "${this.configPath}" not found, using defaults`);
-        return { ...DEFAULT_CONFIG };
+        return this.defaultConfig();
       }
       console.error(`Config file "${this.configPath}" is invalid (${msg}), using defaults`);
-      return { ...DEFAULT_CONFIG };
+      return this.defaultConfig();
     }
   }
 
@@ -59,7 +59,14 @@ export class ConfigManager {
     if (typeof parsed !== "object" || parsed === null) {
       throw new Error("config must be a JSON object");
     }
-    const merged = { ...DEFAULT_CONFIG, ...(parsed as Partial<HubConfig>) };
+    const merged: HubConfig = { port: DEFAULT_CONFIG.port, mcpServers: {} };
+    if (typeof parsed === "object" && parsed !== null) {
+      const p = parsed as Partial<HubConfig>;
+      if (typeof p.port === "number") merged.port = p.port;
+      if (typeof p.mcpServers === "object" && p.mcpServers !== null && !Array.isArray(p.mcpServers)) {
+        merged.mcpServers = p.mcpServers;
+      }
+    }
     if (typeof merged.port !== "number") {
       throw new Error('"port" must be a number');
     }
@@ -79,6 +86,29 @@ export class ConfigManager {
           (!Array.isArray(server.disabledTools) ||
            server.disabledTools.some((t) => typeof t !== "string"))) {
         throw new Error(`"disabledTools" of server "${name}" must be an array of strings`);
+      }
+      if (server.type === "stdio") {
+        if (typeof server.command !== "string") {
+          throw new Error(`"command" of stdio server "${name}" must be a string`);
+        }
+        if (server.args !== undefined &&
+            (!Array.isArray(server.args) ||
+             server.args.some((a) => typeof a !== "string"))) {
+          throw new Error(`"args" of server "${name}" must be an array of strings`);
+        }
+      } else if (server.type === "http") {
+        if (typeof server.url !== "string") {
+          throw new Error(`"url" of http server "${name}" must be a string`);
+        }
+      }
+      if (server.cwd !== undefined && typeof server.cwd !== "string") {
+        throw new Error(`"cwd" of server "${name}" must be a string`);
+      }
+      if (server.env !== undefined &&
+          (typeof server.env !== "object" || server.env === null ||
+           Array.isArray(server.env) ||
+           Object.values(server.env).some((v) => typeof v !== "string"))) {
+        throw new Error(`"env" of server "${name}" must be an object of strings`);
       }
     }
     return merged;
@@ -160,5 +190,9 @@ export class ConfigManager {
     }
     this.watcher?.close();
     this.watcher = null;
+  }
+
+  private defaultConfig(): HubConfig {
+    return { port: DEFAULT_CONFIG.port, mcpServers: {} };
   }
 }

@@ -133,6 +133,13 @@ export class McpClientManager {
         console.log(`Skipping disabled backend "${name}"`);
         continue;
       }
+      // Only disabledTools changed → no reconnect needed (filtered at list/call time)
+      if (oldServer &&
+          JSON.stringify(oldServer) !== JSON.stringify(newServer) &&
+          McpClientManager.serversEquivalentExceptTools(oldServer, newServer)) {
+        console.log(`Updated disabled tools for backend "${name}" (no reconnect needed)`);
+        continue;
+      }
       if (oldServer && JSON.stringify(oldServer) === JSON.stringify(newServer)) continue;
       this.clearRetry(name);
       const existing = this.backends.get(name);
@@ -160,6 +167,17 @@ export class McpClientManager {
 
   getAllBackends(): IBackend[] {
     return Array.from(this.backends.values());
+  }
+
+  private static serversEquivalentExceptTools(
+    a: McpServerConfig,
+    b: McpServerConfig
+  ): boolean {
+    const strip = (s: McpServerConfig) => {
+      const { disabledTools: _dt, ...rest } = s;
+      return JSON.stringify(rest);
+    };
+    return strip(a) === strip(b);
   }
 
   getFailures(): { name: string; type: "stdio" | "http"; error: string }[] {

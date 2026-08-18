@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { tokenizeCommand } from "../util.js";
+import { tokenizeCommand, withTimeout } from "../util.js";
 
 describe("tokenizeCommand", () => {
   it("splits simple space-separated tokens", () => {
@@ -60,5 +60,17 @@ describe("tokenizeCommand", () => {
 
   it("handles leading spaces", () => {
     expect(tokenizeCommand("  node server.js")).toEqual(["node", "server.js"]);
+  });
+});
+
+describe("withTimeout", () => {
+  it("resolves with the value when the promise settles in time", async () => {
+    const result = await withTimeout(Promise.resolve(42), 100, "fast");
+    expect(result).toBe(42);
+  });
+
+  it("rejects with a timeout error when the promise is too slow", async () => {
+    const slow = new Promise<number>((resolve) => setTimeout(() => resolve(1), 500));
+    await expect(withTimeout(slow, 20, "slow op")).rejects.toThrow(/slow op timed out/);
   });
 });

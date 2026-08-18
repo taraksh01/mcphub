@@ -8,12 +8,15 @@ const LABEL = "com.mcphub";
 
 const DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
-function serviceArgs(config: ConfigManager): string[] {
+/**
+ * Build the `mcphub start ...` argument list (without the binary itself).
+ * The binary is resolved at service RUNTIME via a shell wrapper, so updating
+ * the package does not require re-running `install-service`.
+ */
+function startArgs(config: ConfigManager): string[] {
   const cfg = config.get();
   const port = cfg.port ?? 5431;
-  const args = ["mcphub", "start", "--port", String(port)];
-  args.push("--config", config.getConfigPath());
-  return args;
+  return ["start", "--port", String(port), "--config", config.getConfigPath()];
 }
 
 export function installService(config: ConfigManager): void {
@@ -47,9 +50,11 @@ export function uninstallService(): void {
 const SYSTEMD_PATH = "/etc/systemd/system/mcphub.service";
 
 function installLinux(config: ConfigManager): void {
-  const args = serviceArgs(config);
+  const args = startArgs(config);
   const user = process.env.USER || "root";
   const path = process.env.PATH || DEFAULT_PATH;
+  // Resolve `mcphub` at runtime so package updates are picked up automatically.
+  const execStart = `/bin/sh -c 'exec "$(command -v mcphub)" ${args.map((a) => `"${a}"`).join(" ")}'`;
   const unit = `[Unit]
 Description=MCP Hub
 After=network.target
@@ -58,7 +63,7 @@ After=network.target
 Type=simple
 User=${user}
 Environment=PATH=${path}
-ExecStart=${args.join(" ")}
+ExecStart=${execStart}
 Restart=on-failure
 RestartSec=5
 
@@ -73,24 +78,27 @@ WantedBy=multi-user.target
     try {
       execSync(`sudo cp ${tmp} ${SYSTEMD_PATH}`, { stdio: "inherit" });
     } catch {
-      console.log("Could not write to /etc/systemd/system/. To install manually:\n");
-      console.log(`  sudo cp ${tmp} ${SYSTEMD_PATH}`);
-      console.log("  sudo systemctl daemon-reload");
-      console.log("  sudo systemctl enable mcphub");
-      console.log("  sudo systemctl start mcphub");
-      return;
+      console.error("Could not write to /etc/systemd/system/. To install manually:\n");
+      console.error(`  sudo cp ${tmp} ${SYSTEMD_PATH}`);
+      console.error("  sudo systemctl daemon-reload");
+      console.error("  sudo systemctl enable mcphub");
+      console.error("  sudo systemctl start mcphub");
+      process.exit(1);
     } finally {
       try { unlinkSync(tmp); } catch {}
     }
   }
   try {
+    // Stop any crash-looping instance before reconfiguring
+    execSync("sudo systemctl stop mcphub 2>/dev/null", { stdio: "ignore" });
     execSync("sudo systemctl daemon-reload", { stdio: "inherit" });
     execSync("sudo systemctl enable mcphub", { stdio: "inherit" });
     execSync("sudo systemctl start mcphub", { stdio: "inherit" });
     console.log("Service installed and started");
   } catch (e) {
-    console.log("Service file written but failed to enable:", String(e));
-    console.log("Run: sudo systemctl daemon-reload && sudo systemctl enable mcphub");
+    console.error("Service file written but failed to start:", String(e));
+    console.error("Run: sudo systemctl daemon-reload && sudo systemctl enable mcphub && sudo systemctl start mcphub");
+    process.exit(1);
   }
 }
 
@@ -111,9 +119,17 @@ function uninstallLinux(): void {
 }
 
 const LAUNCHD_PATH = join(homedir(), "Library/LaunchAgents", `${LABEL}.plist`);
+const LOG_DIR = join(homedir(), "Library/Logs");
+const LOG_PATH = join(LOG_DIR, "mcphub.log");
 
 function installMacOS(config: ConfigManager): void {
-  const args = serviceArgs(config);
+  const args = startArgs(config);
+  // Ensure log directory exists
+  if (!existsSync(LOG_DIR)) {
+    execSync(`mkdir -p "${LOG_DIR}"`, { stdio: "ignore" });
+  }
+  // Resolve `mcphub` at runtime so package updates are picked up automatically.
+  const execCmd = `exec "$(command -v mcphub)" ${args.map((a) => `"${a}"`).join(" ")}`;
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -122,7 +138,9 @@ function installMacOS(config: ConfigManager): void {
   <string>${LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${args.join("</string>\n    <string>")}</string>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>${execCmd}</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
@@ -134,13 +152,21 @@ function installMacOS(config: ConfigManager): void {
     <string>${process.env.PATH || DEFAULT_PATH}</string>
   </dict>
   <key>StandardOutPath</key>
-  <string>/tmp/mcphub.log</string>
+  <string>${LOG_PATH}</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/mcphub.log</string>
+  <string>${LOG_PATH}</string>
 </dict>
 </plist>
 `;
-  writeFileSync(LAUNCHD_PATH, plist);
+  try {
+    writeFileSync(LAUNCHD_PATH, plist);
+  } catch (e) {
+    console.error("Failed to write launchd plist:", String(e));
+    console.error(`Tried to write to: ${LAUNCHD_PATH}`);
+    process.exit(1);
+  }
+  // Unload existing service first (ignore errors if not loaded)
+  execSync(`launchctl bootout gui/$(id -u) ${LAUNCHD_PATH} 2>/dev/null`, { stdio: "ignore" });
   try {
     execSync(`launchctl bootstrap gui/$(id -u) ${LAUNCHD_PATH}`, { stdio: "inherit" });
   } catch {
@@ -148,8 +174,8 @@ function installMacOS(config: ConfigManager): void {
       execSync(`launchctl load ${LAUNCHD_PATH}`, { stdio: "inherit" });
     } catch (e) {
       console.error("Failed to load launchd service:", String(e));
-      console.log("Try manually: launchctl load " + LAUNCHD_PATH);
-      return;
+      console.error("Try manually: launchctl load " + LAUNCHD_PATH);
+      process.exit(1);
     }
   }
   console.log("Service installed and loaded");
@@ -172,16 +198,22 @@ function uninstallMacOS(): void {
 const TASK_NAME = "MCPHub";
 
 function installWindows(config: ConfigManager): void {
-  const args = serviceArgs(config);
-  const trArg = args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ");
+  const args = startArgs(config);
+  // Resolve `mcphub` at runtime via `where` so package updates are picked up.
+  // `for /f "delims="` keeps the full path; `exit /b` runs only the first match.
+  // Each argument is double-quoted; the outer quotes are escaped as \" for schtasks.
+  const quotedArgs = args.map((a) => `"${a}"`).join(" ");
+  const inner = `for /f \\"delims=\\" %i in ('where mcphub 2^>nul') do @\\"%i\\" ${quotedArgs} & exit /b`;
+  const trArg = `cmd /c \\"${inner}\\"`;
   const cmd = `schtasks /create /tn "${TASK_NAME}" /tr "${trArg}" /sc onstart /ru "%USERNAME%" /f`;
   try {
     execSync(cmd, { stdio: "inherit" });
     console.log("Service installed (starts on next boot)");
-    console.log("Start now with: schtasks /run /tn \"MCPHub\"");
+    console.log('Start now with: schtasks /run /tn "MCPHub"');
   } catch {
     console.log("Could not install. Run as Administrator:");
     console.log(`  ${cmd}`);
+    process.exit(1);
   }
 }
 

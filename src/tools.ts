@@ -1,17 +1,19 @@
 import { McpClientManager } from "./backends/manager.js";
+import { withTimeout } from "./util.js";
+import type { IBackend, Json, Tool, CallToolResult } from "./types.js";
 
 export interface NamespacedTool {
   name: string;
   originalName: string;
   backend: string;
   description?: string;
-  inputSchema?: Record<string, unknown>;
+  inputSchema?: Tool["inputSchema"];
 }
 
 const TOOL_CACHE_TTL_MS = 30_000;
 
 export class ToolAggregator {
-  private cache = new Map<string, { backend: unknown; tools: NamespacedTool[]; fetchedAt: number }>();
+  private cache = new Map<string, { backend: IBackend; tools: NamespacedTool[]; fetchedAt: number }>();
 
   constructor(
     private manager: McpClientManager,
@@ -36,7 +38,11 @@ export class ToolAggregator {
         continue;
       }
       try {
-        const backendTools = await backend.getTools();
+        const backendTools = await withTimeout(
+          backend.getTools(),
+          30_000,
+          `list tools for "${name}"`
+        );
         const namespaced = backendTools.map((tool) => ({
           name: `${name}:${tool.name}`,
           originalName: tool.name,
@@ -57,8 +63,8 @@ export class ToolAggregator {
 
   async callTool(
     namespacedName: string,
-    args: Record<string, unknown>
-  ): Promise<unknown> {
+    args: Record<string, Json>
+  ): Promise<CallToolResult> {
     const colonIndex = namespacedName.indexOf(":");
     if (colonIndex === -1) {
       throw new Error(
@@ -77,6 +83,10 @@ export class ToolAggregator {
       throw new Error(`Tool "${toolName}" is disabled on backend "${backendName}"`);
     }
 
-    return backend.callTool(toolName, args);
+    return withTimeout(
+      backend.callTool(toolName, args),
+      60_000,
+      `call tool "${namespacedName}"`
+    );
   }
 }
