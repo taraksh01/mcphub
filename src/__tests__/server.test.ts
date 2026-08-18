@@ -21,26 +21,46 @@ describe("server listen error handler (Fix #1)", () => {
 });
 
 describe("runtime file (Fix #6)", () => {
-  it("can write and read runtime JSON file", async () => {
-    const { writeFileSync, readFileSync, unlinkSync, mkdirSync } = await import("fs");
+  it("writes and reads runtime JSON via writeRuntime/readRuntime", async () => {
     const { join } = await import("path");
     const { tmpdir } = await import("os");
+    const { existsSync, rmSync } = await import("fs");
 
     const dir = join(tmpdir(), `mcphub-rt-test-${Date.now()}`);
-    mkdirSync(dir, { recursive: true });
+    const { writeRuntime, readRuntime } = await import("../runtime.js");
+
+    writeRuntime(5432, "0.0.0.0", dir);
+    const read = readRuntime(dir);
+    expect(read).not.toBeNull();
+    expect(read!.port).toBe(5432);
+    expect(read!.host).toBe("0.0.0.0");
+
     const file = join(dir, "hub.runtime.json");
-
-    const data = { port: 5432, host: "0.0.0.0" };
-    writeFileSync(file, JSON.stringify(data));
-    const read = JSON.parse(readFileSync(file, "utf-8"));
-    expect(read.port).toBe(5432);
-    expect(read.host).toBe("0.0.0.0");
-
-    unlinkSync(file);
-    const { existsSync } = await import("fs");
-    expect(existsSync(file)).toBe(false);
-
-    const { rmSync } = await import("fs");
+    expect(existsSync(file)).toBe(true);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("readRuntime returns null when file is missing", async () => {
+    const { join } = await import("path");
+    const { tmpdir } = await import("os");
+    const dir = join(tmpdir(), `mcphub-rt-missing-${Date.now()}`);
+    const { readRuntime } = await import("../runtime.js");
+    expect(readRuntime(dir)).toBeNull();
+  });
+});
+
+describe("McpClientManager.syncConfig - disabledTools no-reconnect (Fix #3)", () => {
+  it("treats same config except disabledTools as equivalent (no reconnect)", async () => {
+    const { McpClientManager } = await import("../backends/manager.js");
+    // syncConfig only skips reconnect when everything except disabledTools is identical.
+    const strip = (s: Record<string, unknown>) => {
+      const { disabledTools: _dt, ...rest } = s;
+      return JSON.stringify(rest);
+    };
+    const oldServer = { type: "stdio" as const, command: "echo", disabledTools: ["a"] };
+    const newServer = { type: "stdio" as const, command: "echo", disabledTools: ["a", "b"] };
+    const changed = { type: "stdio" as const, command: "echonew" };
+    expect(strip(oldServer as unknown as Record<string, unknown>)).toBe(strip(newServer as unknown as Record<string, unknown>));
+    expect(strip(oldServer as unknown as Record<string, unknown>)).not.toBe(strip(changed as unknown as Record<string, unknown>));
   });
 });

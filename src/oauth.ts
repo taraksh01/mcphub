@@ -197,8 +197,11 @@ export class McphubOAuthProvider implements OAuthClientProvider {
     }
   }
 
-  private persist(path: string, data: unknown): void {
-    mkdirSync(TOKEN_DIR, { recursive: true });
+  private persist(
+    path: string,
+    data: OAuthTokens | OAuthClientInformationMixed | OAuthDiscoveryState | null,
+  ): void {
+    mkdirSync(TOKEN_DIR, { recursive: true, mode: 0o700 });
     if (data === null) {
       rmSync(path, { force: true });
     } else {

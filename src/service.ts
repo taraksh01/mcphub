@@ -201,8 +201,9 @@ function installWindows(config: ConfigManager): void {
   const args = startArgs(config);
   // Resolve `mcphub` at runtime via `where` so package updates are picked up.
   // `for /f "delims="` keeps the full path; `exit /b` runs only the first match.
-  // Inner double quotes are escaped as \" for schtasks.
-  const inner = `for /f \\"delims=\\" %i in ('where mcphub 2^>nul') do @%i ${args.join(" ")} & exit /b`;
+  // Each argument is double-quoted; the outer quotes are escaped as \" for schtasks.
+  const quotedArgs = args.map((a) => `"${a}"`).join(" ");
+  const inner = `for /f \\"delims=\\" %i in ('where mcphub 2^>nul') do @\\"%i\\" ${quotedArgs} & exit /b`;
   const trArg = `cmd /c \\"${inner}\\"`;
   const cmd = `schtasks /create /tn "${TASK_NAME}" /tr "${trArg}" /sc onstart /ru "%USERNAME%" /f`;
   try {

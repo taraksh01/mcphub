@@ -95,4 +95,114 @@ describe("ConfigManager", () => {
       expect(reloaded.get().mcpServers["test"]).toBeDefined();
     });
   });
+
+  describe("parse - type validation", () => {
+    it("rejects non-string stdio command", () => {
+      const f = join(TEST_DIR, `inv-cmd-${Date.now()}-${Math.random()}.json`);
+      writeFileSync(f, JSON.stringify({
+        port: 5431,
+        mcpServers: { s: { type: "stdio", command: 123 } },
+      }));
+      const mgr = new ConfigManager(f);
+      expect(mgr.get().mcpServers).toEqual({});
+    });
+
+    it("rejects non-array stdio args", () => {
+      const f = join(TEST_DIR, `inv-args-${Date.now()}-${Math.random()}.json`);
+      writeFileSync(f, JSON.stringify({
+        port: 5431,
+        mcpServers: { s: { type: "stdio", command: "echo", args: "echo" } },
+      }));
+      const mgr = new ConfigManager(f);
+      expect(mgr.get().mcpServers).toEqual({});
+    });
+
+    it("rejects non-string http url", () => {
+      const f = join(TEST_DIR, `inv-url-${Date.now()}-${Math.random()}.json`);
+      writeFileSync(f, JSON.stringify({
+        port: 5431,
+        mcpServers: { s: { type: "http", url: 42 } },
+      }));
+      const mgr = new ConfigManager(f);
+      expect(mgr.get().mcpServers).toEqual({});
+    });
+
+    it("rejects non-string env values", () => {
+      const f = join(TEST_DIR, `inv-env-${Date.now()}-${Math.random()}.json`);
+      writeFileSync(f, JSON.stringify({
+        port: 5431,
+        mcpServers: { s: { type: "stdio", command: "echo", env: { K: 1 } } },
+      }));
+      const mgr = new ConfigManager(f);
+      expect(mgr.get().mcpServers).toEqual({});
+    });
+
+    it("accepts valid servers with all fields", () => {
+      const f = join(TEST_DIR, `valid-${Date.now()}-${Math.random()}.json`);
+      writeFileSync(f, JSON.stringify({
+        port: 5431,
+        mcpServers: { s: { type: "stdio", command: "echo", args: ["a"], env: { K: "v" }, cwd: "/tmp", disabledTools: ["t"] } },
+      }));
+      const mgr = new ConfigManager(f);
+      expect(mgr.get().mcpServers["s"]).toBeDefined();
+    });
+  });
+
+  describe("parse - rejects invalid structure", () => {
+    it("rejects non-number port", () => {
+      const f = join(TEST_DIR, `inv-port-${Date.now()}-${Math.random()}.json`);
+      writeFileSync(f, JSON.stringify({ port: "nope", mcpServers: {} }));
+      const mgr = new ConfigManager(f);
+      expect(mgr.get().mcpServers).toEqual({});
+    });
+
+    it("rejects non-object mcpServers", () => {
+      const f = join(TEST_DIR, `inv-ms-${Date.now()}-${Math.random()}.json`);
+      writeFileSync(f, JSON.stringify({ port: 5431, mcpServers: [] }));
+      const mgr = new ConfigManager(f);
+      expect(mgr.get().mcpServers).toEqual({});
+    });
+  });
+
+  describe("mutations", () => {
+    it("setEnabled toggles enabled flag and persists", () => {
+      writeFileSync(TEST_CONFIG, JSON.stringify({ port: 5431, mcpServers: { s: { type: "stdio", command: "echo" } } }));
+      const mgr = new ConfigManager(TEST_CONFIG);
+      expect(mgr.setEnabled("s", false)).toBe(true);
+      const reloaded = new ConfigManager(TEST_CONFIG);
+      expect(reloaded.get().mcpServers["s"].enabled).toBe(false);
+      expect(mgr.setEnabled("missing", true)).toBe(false);
+    });
+
+    it("setToolDisabled adds and removes tools", () => {
+      writeFileSync(TEST_CONFIG, JSON.stringify({ port: 5431, mcpServers: { s: { type: "stdio", command: "echo" } } }));
+      const mgr = new ConfigManager(TEST_CONFIG);
+      expect(mgr.setToolDisabled("s", "foo", true)).toBe(true);
+      expect(mgr.get().mcpServers["s"].disabledTools).toEqual(["foo"]);
+      expect(mgr.setToolDisabled("s", "foo", false)).toBe(true);
+      expect(mgr.get().mcpServers["s"].disabledTools).toBeUndefined();
+      expect(mgr.setToolDisabled("missing", "foo", true)).toBe(false);
+    });
+
+    it("removeServer deletes a server", () => {
+      writeFileSync(TEST_CONFIG, JSON.stringify({ port: 5431, mcpServers: { s: { type: "stdio", command: "echo" } } }));
+      const mgr = new ConfigManager(TEST_CONFIG);
+      mgr.removeServer("s");
+      const reloaded = new ConfigManager(TEST_CONFIG);
+      expect(reloaded.get().mcpServers["s"]).toBeUndefined();
+    });
+  });
+
+  describe("startWatching - Fix #5 (reload callback)", () => {
+    it("invokes callback with new config on file change", async () => {
+      writeFileSync(TEST_CONFIG, JSON.stringify({ port: 5431, mcpServers: {} }));
+      const mgr = new ConfigManager(TEST_CONFIG);
+      const seen: number[] = [];
+      mgr.startWatching((cfg) => seen.push(cfg.port));
+      writeFileSync(TEST_CONFIG, JSON.stringify({ port: 5555, mcpServers: {} }));
+      await new Promise((r) => setTimeout(r, 800));
+      mgr.stopWatching();
+      expect(seen).toContain(5555);
+    });
+  });
 });

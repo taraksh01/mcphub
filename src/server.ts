@@ -2,11 +2,13 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
+  type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ToolAggregator } from "./tools.js";
 import { McpClientManager } from "./backends/manager.js";
 import { VERSION } from "./version.js";
+import type { Json, DaemonMessage } from "./types.js";
 import type { IncomingMessage, ServerResponse } from "http";
 import { randomUUID } from "crypto";
 
@@ -36,8 +38,8 @@ function createMcpServer(aggregator: ToolAggregator): Server {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     try {
-      const result = await aggregator.callTool(name, args ?? {});
-      return result as Record<string, unknown>;
+      const result = await aggregator.callTool(name, (args ?? {}) as Record<string, Json>);
+      return result;
     } catch (e) {
       return {
         content: [
@@ -47,7 +49,7 @@ function createMcpServer(aggregator: ToolAggregator): Server {
           },
         ],
         isError: true,
-      } as Record<string, unknown>;
+      } satisfies CallToolResult;
     }
   });
 
@@ -87,7 +89,7 @@ export class McphubServer {
         }
         if (req.method === "GET" && req.url === "/health") {
           const failures = this.manager.getFailures();
-          const body: Record<string, unknown> = { status: "ok" };
+          const body: { status: string; failures: typeof failures } = { status: "ok", failures };
           if (failures.length > 0) body.failures = failures;
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(body));
@@ -106,7 +108,7 @@ export class McphubServer {
               const transport = new StreamableHTTPServerTransport({
                 sessionIdGenerator: () => randomUUID(),
                 onsessioninitialized: (sid) => {
-                  this.sessions.set(sid, { transport, server, lastActivity: Date.now(), openStreams: 0 });
+                  if (session) this.sessions.set(sid, session);
                 },
                 onsessionclosed: (sid) => {
                   this.sessions.delete(sid);
@@ -134,7 +136,7 @@ export class McphubServer {
                 session.openStreams--;
               });
             }
-            let parsed: unknown;
+            let parsed: Json | undefined;
             if (req.method === "POST") {
               const chunks: Buffer[] = [];
               let size = 0;
@@ -188,7 +190,7 @@ export class McphubServer {
       this.httpServer!.listen(port, host, () => {
         this.httpServer!.off("error", onError);
         if (process.send) {
-          try { (process as { send: (m: unknown) => void }).send({ type: "ready" }); } catch {}
+          try { process.send({ type: "ready" } satisfies DaemonMessage); } catch {}
         }
         console.log(`MCP Hub running on http://${host}:${port}/mcp`);
         resolve();

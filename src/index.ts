@@ -10,7 +10,9 @@ import { VERSION } from "./version.js";
 import { installService, uninstallService } from "./service.js";
 import { loadShellEnv } from "./shellEnv.js";
 import { tokenizeCommand } from "./util.js";
+import { readRuntime, writeRuntime, removeRuntime } from "./runtime.js";
 import { OAuthClientProvider } from "./oauth.js";
+import type { DaemonMessage } from "./types.js";
 
 let config: ConfigManager;
 
@@ -35,27 +37,7 @@ function removePid(): void {
   if (existsSync(file)) unlinkSync(file);
 }
 
-function runtimeFile(): string {
-  return join(dirname(config.getConfigPath()), "hub.runtime.json");
-}
-
-function readRuntime(): { port: number; host: string } | null {
-  try {
-    return JSON.parse(readFileSync(runtimeFile(), "utf-8"));
-  } catch {
-    return null;
-  }
-}
-
-function writeRuntime(port: number, host: string): void {
-  mkdirSync(dirname(runtimeFile()), { recursive: true });
-  writeFileSync(runtimeFile(), JSON.stringify({ port, host }));
-}
-
-function removeRuntime(): void {
-  const f = runtimeFile();
-  if (existsSync(f)) unlinkSync(f);
-}
+export { readRuntime, writeRuntime, removeRuntime };
 
 async function stopHub(): Promise<void> {
   config = new ConfigManager(program.opts().config);
@@ -66,8 +48,12 @@ async function stopHub(): Promise<void> {
   }
   let isMcphub = false;
   try {
-    const cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf-8");
-    isMcphub = cmdline.includes("mcphub");
+    if (process.platform === "win32") {
+      isMcphub = true;
+    } else {
+      const cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf-8");
+      isMcphub = cmdline.includes("mcphub");
+    }
   } catch {}
   if (!isMcphub) {
     removePid();
@@ -136,9 +122,9 @@ async function startDaemon(port: number, host: string): Promise<void> {
       console.error("Daemon did not send ready within 5s, proceeding anyway");
       finish();
     }, 5000);
-    child.once("message", (msg: { type?: string }) => {
-      if (msg?.type === "ready") finish();
-      if (msg?.type === "error") { childFailed = true; finish(); }
+    child.once("message", (msg: DaemonMessage) => {
+      if (msg.type === "ready") finish();
+      if (msg.type === "error") { childFailed = true; finish(); }
     });
     child.once("error", finish);
     child.once("exit", finish);
@@ -246,7 +232,7 @@ program
       await server.start(port, host);
     } catch (err) {
       if (process.send) {
-        try { (process as { send: (m: unknown) => void }).send({ type: "error" }); } catch {}
+        try { process.send({ type: "error" } satisfies DaemonMessage); } catch {}
       }
       throw err;
     }
@@ -274,9 +260,9 @@ program
   .option("-p, --port <port>", "Port number", parseInt)
   .action(async (options) => {
     config = new ConfigManager(program.opts().config);
-    const port = options.port ?? config.get().port ?? 5431;
     const pid = readPid();
-    const runtime = pid ? readRuntime() : null;
+    const runtime = pid ? readRuntime(dirname(config.getConfigPath())) : null;
+    const port = options.port ?? runtime?.port ?? config.get().port ?? 5431;
     const host = runtime?.host ?? "127.0.0.1";
     await stopHub();
     await startDaemon(port, host);
@@ -454,7 +440,7 @@ program
     }
     console.log("Hub is running");
     console.log(`PID: ${pid}`);
-    const runtime = readRuntime();
+    const runtime = readRuntime(dirname(config.getConfigPath()));
     const port = runtime?.port ?? config.get().port;
     console.log(`Port: ${port}`);
     console.log(`Host: ${runtime?.host ?? "127.0.0.1"}`);

@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { McpServerConfig, IBackend } from "../types.js";
+import { McpServerConfig, IBackend, Json } from "../types.js";
+import type { Tool, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { VERSION } from "../version.js";
 import { withTimeout } from "../util.js";
 
@@ -64,12 +65,12 @@ export class StdioBackend implements IBackend {
     await this.client.close();
   }
 
-  async getTools(): Promise<{ name: string; description?: string; inputSchema?: Record<string, unknown> }[]> {
+  async getTools(): Promise<Tool[]> {
     const result = await this.client.listTools();
     return result.tools;
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    return this.client.callTool({ name, arguments: args });
+  async callTool(name: string, args: Record<string, Json>): Promise<CallToolResult> {
+    return (await this.client.callTool({ name, arguments: args })) as CallToolResult;
   }
 }
