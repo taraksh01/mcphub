@@ -82,6 +82,21 @@ export class ConfigManager {
           (server.type !== "stdio" && server.type !== "http")) {
         throw new Error(`invalid server entry "${name}"`);
       }
+      if (server.type === "stdio") {
+        if (!server.command || typeof server.command !== "string") {
+          throw new Error(`server "${name}" (stdio) must have a "command" string`);
+        }
+      }
+      if (server.type === "http") {
+        if (!server.url || typeof server.url !== "string") {
+          throw new Error(`server "${name}" (http) must have a "url" string`);
+        }
+        try {
+          new URL(server.url);
+        } catch {
+          throw new Error(`server "${name}" has invalid URL: "${server.url}"`);
+        }
+      }
       if (server.disabledTools !== undefined &&
           (!Array.isArray(server.disabledTools) ||
            server.disabledTools.some((t) => typeof t !== "string"))) {
