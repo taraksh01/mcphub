@@ -1,6 +1,6 @@
 import { execSync } from "child_process";
 import { writeFileSync, unlinkSync, existsSync, mkdirSync } from "fs";
-import { homedir, platform } from "os";
+import { homedir, platform, tmpdir } from "os";
 import { join, resolve, dirname } from "path";
 import { ConfigManager } from "./config.js";
 
@@ -47,10 +47,10 @@ function serviceArgs(config: ConfigManager, pinVersion = false): string[] {
   return args;
 }
 
-export function installService(config: ConfigManager, pinVersion = false): void {
+export function installService(config: ConfigManager, pinVersion = false, system = false): void {
   const plat = platform();
   if (plat === "linux") {
-    installLinux(config, pinVersion);
+    installLinux(config, pinVersion, system);
   } else if (plat === "darwin") {
     installMacOS(config, pinVersion);
   } else if (plat === "win32") {
@@ -61,10 +61,10 @@ export function installService(config: ConfigManager, pinVersion = false): void 
   }
 }
 
-export function uninstallService(): void {
+export function uninstallService(system = false): void {
   const plat = platform();
   if (plat === "linux") {
-    uninstallLinux();
+    uninstallLinux(system);
   } else if (plat === "darwin") {
     uninstallMacOS();
   } else if (plat === "win32") {
@@ -75,12 +75,30 @@ export function uninstallService(): void {
   }
 }
 
-function installLinux(config: ConfigManager, pinVersion = false): void {
+/**
+ * Returns the "sudo " prefix when the current user is not root (POSIX only).
+ * On Windows or when already root, returns an empty string so the same
+ * command works without privilege escalation.
+ */
+function sudoPrefix(): string {
+  if (typeof process.getuid === "function" && process.getuid() === 0) return "";
+  return "sudo ";
+}
+
+function installLinux(config: ConfigManager, pinVersion = false, system = false): void {
   const args = serviceArgs(config, pinVersion);
-  const user = process.env.USER || "root";
-  const path = process.env.PATH || DEFAULT_PATH;
   const execStart = args.join(" ");
-  const unit = `[Unit]
+  const path = process.env.PATH || DEFAULT_PATH;
+
+  let unit: string;
+  let unitPath: string;
+  let reloadCmd: string;
+  let startCmd: string;
+
+  if (system) {
+    // System-wide: requires root. Runs as the invoking user via User=.
+    const user = process.env.USER || "root";
+    unit = `[Unit]
 Description=MCP Hub
 After=network.target
 
@@ -95,10 +113,49 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 `;
+    unitPath = "/etc/systemd/system/mcphub.service";
+    reloadCmd = "systemctl daemon-reload";
+    startCmd = "systemctl enable --now mcphub";
+  } else {
+    // Per-user: no root required. Runs in the user session.
+    unit = `[Unit]
+Description=MCP Hub
+After=network.target
+
+[Service]
+Type=simple
+Environment=PATH=${path}
+ExecStart=${execStart}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+`;
+    unitPath = join(homedir(), ".config", "systemd", "user", "mcphub.service");
+    reloadCmd = "systemctl --user daemon-reload";
+    startCmd = "systemctl --user enable --now mcphub";
+  }
+
   try {
-    writeFileSync("/etc/systemd/system/mcphub.service", unit);
+    if (system) {
+      const tmp = join(tmpdir(), "mcphub.service");
+      writeFileSync(tmp, unit);
+      const sudo = sudoPrefix();
+      execSync(`${sudo}cp "${tmp}" "${unitPath}"`, { stdio: "ignore" });
+      execSync(`${sudo}${reloadCmd}`, { stdio: "ignore" });
+      execSync(`${sudo}${startCmd}`, { stdio: "inherit" });
+      console.log("System-wide systemd service installed.");
+    } else {
+      mkdirSync(dirname(unitPath), { recursive: true });
+      writeFileSync(unitPath, unit);
+      execSync(reloadCmd, { stdio: "ignore" });
+      execSync(startCmd, { stdio: "inherit" });
+      console.log("User systemd service installed.");
+      console.log("Starts at login. For boot-without-login: loginctl enable-linger $USER");
+    }
   } catch {
-    console.error("Could not write systemd service file. Run as root.");
+    console.error(`Could not install systemd service${system ? " (try running with sudo)" : ""}.`);
   }
 }
 
@@ -170,12 +227,25 @@ function installWindows(config: ConfigManager, pinVersion = false): void {
 
 const TASK_NAME = "MCPHub";
 
-function uninstallLinux(): void {
-  try {
-    execSync(`systemctl stop mcphub 2>/dev/null; systemctl disable mcphub 2>/dev/null; rm -f /etc/systemd/system/mcphub.service`, { stdio: "ignore" });
-    console.log("Linux service uninstalled");
-  } catch {
-    console.log("Could not uninstall Linux service");
+function uninstallLinux(system = false): void {
+  const sudo = sudoPrefix();
+  if (system) {
+    const cmd = `${sudo}systemctl stop mcphub 2>/dev/null; ${sudo}systemctl disable mcphub 2>/dev/null; ${sudo}rm -f /etc/systemd/system/mcphub.service; ${sudo}systemctl daemon-reload`;
+    try {
+      execSync(cmd, { stdio: "ignore" });
+      console.log("System-wide systemd service uninstalled");
+    } catch {
+      console.log("Could not uninstall system-wide systemd service");
+    }
+  } else {
+    const unitPath = join(homedir(), ".config", "systemd", "user", "mcphub.service");
+    const cmd = `systemctl --user stop mcphub 2>/dev/null; systemctl --user disable mcphub 2>/dev/null; rm -f "${unitPath}"; systemctl --user daemon-reload`;
+    try {
+      execSync(cmd, { stdio: "ignore" });
+      console.log("User systemd service uninstalled");
+    } catch {
+      console.log("Could not uninstall user systemd service");
+    }
   }
 }
 

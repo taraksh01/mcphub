@@ -129,34 +129,59 @@ curl http://localhost:5431/health  # JSON health check
 
 ---
 
-## Boot-Time Service (Auto-Start on Boot)
+## Boot-Time Service (Auto-Start)
 
-### Auto-Update Mode (Default)
+MCP Hub can run as a background service so it starts automatically. By default
+it installs **per-user** (no `sudo` required); pass `--system` for a system-wide
+install that requires root.
+
+### Per-User Install (Default — no sudo)
 
 ```bash
 mcphub install-service
-# Uses pnpm shim; picks up new versions on service restart
+# Writes ~/.config/systemd/user/mcphub.service; starts at your login
+```
+
+The service starts when you log in. To start it at boot without logging in
+(Linux), enable lingering once:
+
+```bash
+loginctl enable-linger $USER
+```
+
+### System-Wide Install (requires sudo)
+
+```bash
+mcphub install-service --system
+# Writes /etc/systemd/system/mcphub.service, runs as your user via User=
 ```
 
 ### Version Pinning
 
 ```bash
-mcphub install-service --pin-version
-# Pins to exact version; immune to package updates
+mcphub install-service --pin-version           # per-user, pinned
+mcphub install-service --system --pin-version # system-wide, pinned
 ```
 
 | Mode | Behavior | Best For |
 |------|----------|----------|
-| **Default (auto-update)** | Uses `~/.local/share/pnpm/bin/mcphub` shim. When you update the package, the service picks up the new version on restart. | Production, always want latest |
-| **`--pin-version`** | Uses absolute `node` + script path. Stays on exact version until you re-run `install-service`. | CI/CD, reproducible deploys, testing |
+| **Default (auto-update, per-user)** | Uses `~/.local/share/pnpm/bin/mcphub` shim. Picks up new versions on restart. No root needed. | Daily use, always want latest |
+| **`--pin-version`** | Uses absolute `node` + script path. Stays on exact version until you re-run `install-service`. | CI/CD, reproducible deploys |
+| **`--system`** | Installs system-wide under `/etc/systemd/system` (needs `sudo`). | Shared machines, boot before login |
+
+### Check Status
 
 ```bash
-# Check service status
-systemctl status mcphub      # Linux
-launchctl list | grep mcphub # macOS
+systemctl --user status mcphub    # per-user (Linux)
+systemctl status mcphub           # system-wide (Linux)
+launchctl list | grep mcphub      # macOS
+```
 
-# Uninstall
-mcphub uninstall-service
+### Uninstall
+
+```bash
+mcphub uninstall-service           # per-user
+mcphub uninstall-service --system  # system-wide (needs sudo)
 ```
 
 ---
@@ -347,8 +372,8 @@ Commands:
   auth <name>             Authenticate OAuth-protected HTTP server
   config                  Show config file path
 
-  install-service [--pin-version]   Install as boot-time service
-  uninstall-service                 Remove boot-time service
+  install-service [--pin-version] [--system]   Install as boot-time service (per-user default; --system for system-wide)
+  uninstall-service [--system]                 Remove boot-time service (--system for system-wide)
 ```
 
 ---
@@ -359,13 +384,17 @@ Commands:
 
 ```bash
 # Check logs
-journalctl -u mcphub -f          # Linux
+journalctl --user -u mcphub -f   # per-user (Linux)
+journalctl -u mcphub -f          # system-wide (Linux)
 tail -f ~/.config/mcphub/hub.log # Daemon mode
 
 # Verify binary
 mcphub --version
 which mcphub
 ```
+
+> Per-user installs only run inside your login session. If the service
+> doesn't start at boot, enable lingering once: `loginctl enable-linger $USER`.
 
 ### Port Already in Use
 
