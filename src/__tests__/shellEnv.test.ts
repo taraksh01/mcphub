@@ -62,4 +62,26 @@ describe("parseExport (shellEnv)", () => {
   it("handles double-quoted inline comment correctly", () => {
     expect(parseExport('export FOO="bar baz" # comment')).toEqual(["FOO", "bar baz"]);
   });
+
+  it("handles single-quoted inline comment correctly", () => {
+    expect(parseExport("export FOO='bar baz' # comment")).toEqual(["FOO", "bar baz"]);
+  });
+
+  it("handles export with no value after equals", () => {
+    expect(parseExport("export FOO=")).toEqual(["FOO", ""]);
+  });
+
+  it("handles key with underscore", () => {
+    expect(parseExport("export MY_VAR=value")).toEqual(["MY_VAR", "value"]);
+  });
+
+  it("rejects key starting with number", () => {
+    expect(parseExport("export 1VAR=value")).toBeNull();
+  });
+
+  it("expands $HOME in double quotes (backslash escape not supported)", () => {
+    const home = os.homedir();
+    // Backslash is not an escape character, so \$HOME becomes \ + expanded $HOME
+    expect(parseExport('export FOO="\\$HOME"')).toEqual(["FOO", "\\" + home]);
+  });
 });

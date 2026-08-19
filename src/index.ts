@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, openSync } from "fs";
+import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, openSync, closeSync } from "fs";
 import { dirname, join } from "path";
 import { ConfigManager } from "./config.js";
 import { McpClientManager } from "./backends/manager.js";
@@ -48,16 +48,14 @@ async function stopHub(): Promise<void> {
   }
   let isMcphub = false;
   try {
-    if (process.platform === "win32") {
-      isMcphub = true;
-    } else {
-      const cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf-8");
-      isMcphub = cmdline.includes("mcphub");
-    }
-  } catch {}
+    process.kill(pid, 0);
+    isMcphub = true;
+  } catch {
+    isMcphub = false;
+  }
   if (!isMcphub) {
     removePid();
-    console.log(`PID ${pid} is not an mcphub process, cleaned up stale PID file`);
+    console.log(`PID ${pid} not found, cleaned up stale PID file`);
     return;
   }
   try {
@@ -107,6 +105,7 @@ async function startDaemon(port: number, host: string): Promise<void> {
   });
   child.unref();
   let childFailed = false;
+  let readyReceived = false;
   await new Promise<void>((resolve) => {
     let settled = false;
     const finish = () => {
@@ -119,17 +118,22 @@ async function startDaemon(port: number, host: string): Promise<void> {
       resolve();
     };
     const timeout = setTimeout(() => {
-      console.error("Daemon did not send ready within 5s, proceeding anyway");
+      console.error("Daemon did not send ready within 5s, treating as failure");
+      childFailed = true;
       finish();
     }, 5000);
-    child.once("message", (msg: DaemonMessage) => {
-      if (msg.type === "ready") finish();
-      if (msg.type === "error") { childFailed = true; finish(); }
+child.once("message", (msg: { type?: string }) => {
+      if (msg?.type === "ready") {
+        readyReceived = true;
+        finish();
+      }
+      if (msg?.type === "error") { childFailed = true; finish(); }
     });
-    child.once("error", finish);
-    child.once("exit", finish);
+    child.once("error", () => { childFailed = true; finish(); });
+    child.once("exit", (code) => { if (!readyReceived && code !== 0) childFailed = true; finish(); });
   });
-  if (childFailed) {
+  try { closeSync(logFd); } catch {}
+  if (childFailed || !readyReceived) {
     console.error("Hub failed to start (check port and config)");
     removePid();
     process.exit(1);
@@ -243,7 +247,6 @@ program
     config.startWatching(async (newConfig) => {
       console.log("\nConfig changed, syncing backends...");
       await manager.syncConfig(cfg.mcpServers, newConfig.mcpServers);
-      cfg.mcpServers = newConfig.mcpServers;
     });
   });
 
@@ -438,17 +441,20 @@ program
       console.log("Hub not running");
       return;
     }
+    try {
+      process.kill(pid, 0);
+    } catch {
+      removePid();
+      removeRuntime();
+      console.log("Hub not running (stale PID file cleaned up)");
+      return;
+    }
     console.log("Hub is running");
     console.log(`PID: ${pid}`);
     const runtime = readRuntime(dirname(config.getConfigPath()));
     const port = runtime?.port ?? config.get().port;
     console.log(`Port: ${port}`);
     console.log(`Host: ${runtime?.host ?? "127.0.0.1"}`);
-    try {
-      process.kill(pid, 0);
-    } catch {
-      console.log("(Process not found, stale PID file)");
-    }
     const entries = Object.entries(config.get().mcpServers);
     if (entries.length > 0) {
       console.log(`Servers (${entries.length}):`);
@@ -518,9 +524,10 @@ program
 program
   .command("install-service")
   .description("Install as a boot-time service (systemd/launchd/schtasks)")
-  .action(() => {
+  .option("--pin-version", "Pin to exact version (won't auto-update on version bump)")
+  .action((options) => {
     config = new ConfigManager(program.opts().config);
-    installService(config);
+    installService(config, options.pinVersion);
   });
 
 program

@@ -108,7 +108,13 @@ export class McphubServer {
               const transport = new StreamableHTTPServerTransport({
                 sessionIdGenerator: () => randomUUID(),
                 onsessioninitialized: (sid) => {
-                  if (session) this.sessions.set(sid, session);
+                  const existing = this.sessions.get(sid);
+                  if (existing) {
+                    existing.transport = transport;
+                    existing.server = server;
+                  } else {
+                    this.sessions.set(sid, { transport, server, lastActivity: Date.now(), openStreams: 0 });
+                  }
                 },
                 onsessionclosed: (sid) => {
                   this.sessions.delete(sid);
@@ -124,11 +130,26 @@ export class McphubServer {
                   }
                 }
               };
+              try {
+                await server.connect(transport);
+              } catch (e) {
+                if (sessionId) {
+                  this.sessions.delete(sessionId);
+                }
+                throw e;
+              }
               session = { transport, server, lastActivity: Date.now(), openStreams: 0 };
-              await server.connect(transport);
+              if (sessionId) {
+                this.sessions.set(sessionId, session);
+              } else {
+                const generatedSid = transport.sessionId;
+                if (generatedSid) {
+                  this.sessions.set(generatedSid, session);
+                }
+              }
             }
 
-            const { transport, server } = session;
+            const { transport, server: mcpServer } = session;
             session.lastActivity = Date.now();
             if (req.method === "GET") {
               session.openStreams++;
@@ -165,7 +186,7 @@ export class McphubServer {
             );
 
             if (created && transport.sessionId === undefined) {
-              server.close().catch(() => {});
+              mcpServer.close().catch(() => {});
               transport.close();
             }
           } catch (e) {

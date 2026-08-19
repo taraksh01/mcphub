@@ -61,6 +61,20 @@ describe("tokenizeCommand", () => {
   it("handles leading spaces", () => {
     expect(tokenizeCommand("  node server.js")).toEqual(["node", "server.js"]);
   });
+
+  it("treats single quotes literally (no escaping inside single quotes)", () => {
+    expect(tokenizeCommand("echo 'it''s me'")).toEqual(["echo", "its me"]);
+  });
+
+  it("does not expand environment variables (literal $VAR)", () => {
+    process.env.TEST_VAR = "value";
+    expect(tokenizeCommand("echo $TEST_VAR")).toEqual(["echo", "$TEST_VAR"]);
+    delete process.env.TEST_VAR;
+  });
+
+  it("handles commands with equals in value", () => {
+    expect(tokenizeCommand("server --config=key=value")).toEqual(["server", "--config=key=value"]);
+  });
 });
 
 describe("withTimeout", () => {
