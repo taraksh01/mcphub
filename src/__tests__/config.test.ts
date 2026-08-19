@@ -10,6 +10,9 @@ function createTestDir(): { dir: string; config: string } {
   return { dir, config: join(dir, "config.json") };
 }
 
+const TEST_CONFIG = join(tmpdir(), "mcphub-config.json");
+const TEST_DIR = tmpdir();
+
 describe.sequential("ConfigManager", () => {
   describe("load - Fix #8 (ENOENT silent defaults)", () => {
     it("returns defaults when config file does not exist", () => {
@@ -158,7 +161,7 @@ describe.sequential("ConfigManager", () => {
       }));
       const mgr = new ConfigManager(f);
       expect(mgr.get().mcpServers["s"]).toBeDefined();
-    }
+    });
   });
 
   describe("parse - rejects invalid structure", () => {
@@ -174,7 +177,7 @@ describe.sequential("ConfigManager", () => {
       writeFileSync(f, JSON.stringify({ port: 5431, mcpServers: [] }));
       const mgr = new ConfigManager(f);
       expect(mgr.get().mcpServers).toEqual({});
-    }
+    });
   });
 
   describe("parse - new validation rules", () => {
@@ -231,7 +234,7 @@ describe.sequential("ConfigManager", () => {
       const mgr = new ConfigManager(config);
       expect(mgr.get().mcpServers["test"]).toBeDefined();
       rmSync(dir, { recursive: true, force: true });
-    }
+    });
   });
 
   describe("mutations", () => {
@@ -260,8 +263,8 @@ describe.sequential("ConfigManager", () => {
       mgr.removeServer("s");
       const reloaded = new ConfigManager(TEST_CONFIG);
       expect(reloaded.get().mcpServers["s"]).toBeUndefined();
-    }
-  );
+    });
+  });
 
   describe("startWatching - Fix #5 (reload callback)", () => {
     it("invokes callback with new config on file change", async () => {
@@ -273,6 +276,6 @@ describe.sequential("ConfigManager", () => {
       await new Promise((r) => setTimeout(r, 800));
       mgr.stopWatching();
       expect(seen).toContain(5555);
-    }
+    });
   });
 });
