@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
-import { writeFileSync, unlinkSync, existsSync } from "fs";
+import { writeFileSync, unlinkSync, existsSync, mkdirSync } from "fs";
 import { homedir, platform } from "os";
-import { join, resolve } from "path";
+import { join, resolve, dirname } from "path";
 import { ConfigManager } from "./config.js";
 
 const LABEL = "com.mcphub";
