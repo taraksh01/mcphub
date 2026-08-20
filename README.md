@@ -315,6 +315,11 @@ Or set `MCPHUB_CONFIG` env var.
 }
 ```
 
+**HTTP server options:**
+
+- `url` — MCP Streamable HTTP endpoint.
+- `heartbeatMs` — *(optional)* when set, mcphub sends a `ping` every `heartbeatMs` ms to keep the backend session alive. Useful when the server enforces a short idle timeout (mcphub automatically reconnects and retries if a session still expires).
+
 ---
 
 ## Shell Environment Variables

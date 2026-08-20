@@ -10,6 +10,21 @@ export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, lab
   }
 }
 
+export function isSessionError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  const err = e as Error & { code?: unknown };
+  const code = err.code;
+  const msg = err.message.toLowerCase();
+  // StreamableHTTPError carries the HTTP status as `code` (e.g. 404 on an
+  // expired/invalid session when POSTing to the MCP endpoint).
+  if (code === 404) return true;
+  // JSON-RPC -32000 "Server not initialized" — the server dropped the session.
+  if (code === -32000 && /not initialized|session/i.test(msg)) return true;
+  // Fallback for server messages that mention a lost/terminated session.
+  if (/session (?:not found|invalid|expired|unknown|terminated|timeout)|invalid.*session/i.test(msg)) return true;
+  return false;
+}
+
 export function tokenizeCommand(input: string): string[] {
   const tokens: string[] = [];
   let current = "";

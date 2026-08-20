@@ -11,6 +11,8 @@ export interface McpServerConfig {
   cwd?: string;
   enabled?: boolean;
   disabledTools?: string[];
+  /** HTTP only: interval (ms) to send a keep-alive `ping` and refresh the server session. */
+  heartbeatMs?: number;
 }
 
 export interface HubConfig {
@@ -33,6 +35,7 @@ export interface IBackend {
   onclose?: () => void;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
+  reconnect(): Promise<void>;
   getTools(): Promise<Tool[]>;
   callTool(name: string, args: Record<string, Json>): Promise<CallToolResult>;
 }
