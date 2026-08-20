@@ -51,7 +51,7 @@ describe("runtime file (Fix #6)", () => {
 
 describe("McpClientManager.syncConfig - disabledTools no-reconnect (Fix #3)", () => {
   it("treats same config except disabledTools as equivalent (no reconnect)", async () => {
-    const { McpClientManager } = await import("../backends/manager.js");
+    await import("../backends/manager.js");
     // syncConfig only skips reconnect when everything except disabledTools is identical.
     const strip = (s: Record<string, unknown>) => {
       const { disabledTools: _dt, ...rest } = s;

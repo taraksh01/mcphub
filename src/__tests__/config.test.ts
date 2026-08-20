@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { writeFileSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -16,7 +16,7 @@ const TEST_DIR = tmpdir();
 describe.sequential("ConfigManager", () => {
   describe("load - Fix #8 (ENOENT silent defaults)", () => {
     it("returns defaults when config file does not exist", () => {
-      const { dir, config } = createTestDir();
+      const { dir } = createTestDir();
       const mgr = new ConfigManager(join(dir, "nonexistent.json"));
       expect(mgr.get().port).toBe(5431);
       expect(mgr.get().mcpServers).toEqual({});

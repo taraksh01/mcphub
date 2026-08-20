@@ -1,5 +1,5 @@
 import { execSync } from "child_process";
-import { writeFileSync, unlinkSync, existsSync, mkdirSync } from "fs";
+import { writeFileSync, existsSync, mkdirSync } from "fs";
 import { homedir, platform, tmpdir } from "os";
 import { join, resolve, dirname } from "path";
 import { ConfigManager } from "./config.js";
