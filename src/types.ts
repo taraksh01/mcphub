@@ -11,6 +11,8 @@ export interface McpServerConfig {
   cwd?: string;
   enabled?: boolean;
   disabledTools?: string[];
+  /** HTTP only: interval (ms) to send a keep-alive `ping` and refresh the server session. */
+  heartbeatMs?: number;
 }
 
 export interface HubConfig {
