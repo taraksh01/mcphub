@@ -9,7 +9,9 @@ import { withTimeout } from "../util.js";
 export class HttpBackend implements IBackend {
   private client: Client;
   private authProvider: OAuthClientProvider | null = null;
+  private useAuth = false;
   private closing = false;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   onclose?: () => void;
 
   constructor(
@@ -35,20 +37,10 @@ export class HttpBackend implements IBackend {
 
     this.authProvider = new OAuthClientProvider(this.name, this.config.url);
     const tokens = await this.authProvider.tokens();
+    this.useAuth = !!tokens;
 
     try {
-      const transport = new StreamableHTTPClientTransport(
-        new URL(this.config.url),
-        tokens ? { authProvider: this.authProvider } : undefined
-      );
-      transport.onclose = () => {
-        if (!this.closing) this.onclose?.();
-      };
-      await withTimeout(
-        this.client.connect(transport),
-        30_000,
-        `connect to http server "${this.name}"`
-      );
+      await this.establishConnection();
     } catch (e) {
       this.closing = true;
       await this.client.close().catch(() => {});
@@ -56,7 +48,58 @@ export class HttpBackend implements IBackend {
     }
   }
 
+  private async establishConnection(): Promise<void> {
+    const transport = new StreamableHTTPClientTransport(
+      new URL(this.config.url!),
+      this.useAuth ? { authProvider: this.authProvider! } : undefined
+    );
+    transport.onclose = () => {
+      if (!this.closing) this.onclose?.();
+    };
+    await withTimeout(
+      this.client.connect(transport),
+      30_000,
+      `connect to http server "${this.name}"`
+    );
+    this.startHeartbeat();
+  }
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    const ms = this.config.heartbeatMs;
+    if (!ms || ms <= 0) return;
+    console.error(`[mcphub] http backend "${this.getName()}": heartbeat started (every ${ms}ms)`);
+    this.heartbeatTimer = setInterval(() => {
+      this.client.ping().catch((e) =>
+        console.error(
+          `[mcphub] http backend "${this.getName()}": heartbeat ping failed: ${e instanceof Error ? e.message : String(e)}`
+        )
+      );
+    }, ms);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
+  async reconnect(): Promise<void> {
+    console.error(`[mcphub] http backend "${this.getName()}": session lost, reinitializing connection...`);
+    this.closing = true;
+    await this.client.close().catch(() => {});
+    this.closing = false;
+    this.client = new Client(
+      { name: `mcphub-${this.name}`, version: VERSION },
+      { capabilities: {} }
+    );
+    await this.establishConnection();
+    console.error(`[mcphub] http backend "${this.getName()}": connection reinitialized`);
+  }
+
   async disconnect(): Promise<void> {
+    this.stopHeartbeat();
     this.closing = true;
     await this.client.close();
   }

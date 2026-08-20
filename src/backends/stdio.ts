@@ -31,33 +31,53 @@ export class StdioBackend implements IBackend {
   async connect(): Promise<void> {
     if (!this.config.command) throw new Error("No command specified");
 
+    try {
+      await this.establishConnection();
+    } catch (e) {
+      this.closing = true;
+      await this.client.close().catch(() => {});
+      throw e;
+    }
+  }
+
+  private buildEnv(): Record<string, string> {
     const env: Record<string, string> = {};
     for (const key of Object.keys(process.env)) {
       const val = process.env[key];
       if (val !== undefined) env[key] = val;
     }
     Object.assign(env, this.config.env);
+    return env;
+  }
 
-    try {
-      const transport = new StdioClientTransport({
-        command: this.config.command,
-        args: this.config.args || [],
-        cwd: this.config.cwd || process.cwd(),
-        env,
-      });
-      transport.onclose = () => {
-        if (!this.closing) this.onclose?.();
-      };
-      await withTimeout(
-        this.client.connect(transport),
-        30_000,
-        `connect to stdio server "${this.name}"`
-      );
-    } catch (e) {
-      this.closing = true;
-      await this.client.close().catch(() => {});
-      throw e;
-    }
+  private async establishConnection(): Promise<void> {
+    const transport = new StdioClientTransport({
+      command: this.config.command!,
+      args: this.config.args || [],
+      cwd: this.config.cwd || process.cwd(),
+      env: this.buildEnv(),
+    });
+    transport.onclose = () => {
+      if (!this.closing) this.onclose?.();
+    };
+    await withTimeout(
+      this.client.connect(transport),
+      30_000,
+      `connect to stdio server "${this.name}"`
+    );
+  }
+
+  async reconnect(): Promise<void> {
+    console.error(`[mcphub] stdio backend "${name}": session lost, reinitializing connection...`);
+    this.closing = true;
+    await this.client.close().catch(() => {});
+    this.closing = false;
+    this.client = new Client(
+      { name: `mcphub-${name}`, version: VERSION },
+      { capabilities: {} }
+    );
+    await this.establishConnection();
+    console.error(`[mcphub] stdio backend "${name}": connection reinitialized`);
   }
 
   async disconnect(): Promise<void> {

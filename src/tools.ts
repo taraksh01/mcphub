@@ -1,5 +1,5 @@
 import { McpClientManager } from "./backends/manager.js";
-import { withTimeout } from "./util.js";
+import { withTimeout, isSessionError } from "./util.js";
 import type { IBackend, Json, Tool, CallToolResult } from "./types.js";
 
 export interface NamespacedTool {
@@ -38,11 +38,7 @@ export class ToolAggregator {
         continue;
       }
       try {
-        const backendTools = await withTimeout(
-          backend.getTools(),
-          30_000,
-          `list tools for "${name}"`
-        );
+        const backendTools = await this.fetchTools(backend);
         const namespaced = backendTools.map((tool) => ({
           name: `${name}:${tool.name}`,
           originalName: tool.name,
@@ -59,6 +55,20 @@ export class ToolAggregator {
     }
 
     return tools;
+  }
+
+  private async fetchTools(backend: IBackend): Promise<Tool[]> {
+    const label = `list tools for "${backend.getName()}"`;
+    try {
+      return await withTimeout(backend.getTools(), 30_000, label);
+    } catch (e) {
+      if (isSessionError(e)) {
+        console.error(`[mcphub] backend "${backend.getName()}": session error (${e instanceof Error ? e.message : String(e)}) — reconnecting before retrying tool list`);
+        await backend.reconnect();
+        return await withTimeout(backend.getTools(), 30_000, `${label} (retry)`);
+      }
+      throw e;
+    }
   }
 
   async callTool(
@@ -83,10 +93,23 @@ export class ToolAggregator {
       throw new Error(`Tool "${toolName}" is disabled on backend "${backendName}"`);
     }
 
-    return withTimeout(
-      backend.callTool(toolName, args),
-      60_000,
-      `call tool "${namespacedName}"`
-    );
+    try {
+      return await withTimeout(
+        backend.callTool(toolName, args),
+        60_000,
+        `call tool "${namespacedName}"`
+      );
+    } catch (e) {
+      if (isSessionError(e)) {
+        console.error(`[mcphub] backend "${backendName}": session error (${e instanceof Error ? e.message : String(e)}) — reconnecting before retrying tool call`);
+        await backend.reconnect();
+        return await withTimeout(
+          backend.callTool(toolName, args),
+          60_000,
+          `call tool "${namespacedName}" (retry)`
+        );
+      }
+      throw e;
+    }
   }
 }

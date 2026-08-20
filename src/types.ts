@@ -33,6 +33,7 @@ export interface IBackend {
   onclose?: () => void;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
+  reconnect(): Promise<void>;
   getTools(): Promise<Tool[]>;
   callTool(name: string, args: Record<string, Json>): Promise<CallToolResult>;
 }
