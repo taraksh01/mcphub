@@ -131,11 +131,11 @@ curl http://localhost:5431/health  # JSON health check
 
 ## Boot-Time Service (Auto-Start)
 
-MCP Hub can run as a background service so it starts automatically. By default
+mcphub can run as a background service so it starts automatically. By default
 it installs **per-user** (no `sudo` required); pass `--system` for a system-wide
 install that requires root.
 
-### Per-User Install (Default — no sudo)
+### Per-User Install (Default - no sudo)
 
 ```bash
 mcphub install-service
@@ -317,8 +317,8 @@ Or set `MCPHUB_CONFIG` env var.
 
 **HTTP server options:**
 
-- `url` — MCP Streamable HTTP endpoint.
-- `heartbeatMs` — *(optional)* when set, mcphub sends a `ping` every `heartbeatMs` ms to keep the backend session alive. Useful when the server enforces a short idle timeout (mcphub automatically reconnects and retries if a session still expires).
+- `url` - MCP Streamable HTTP endpoint.
+- `heartbeatMs` - *(optional)* when set, mcphub sends a `ping` every `heartbeatMs` ms to keep the backend session alive. Useful when the server enforces a short idle timeout (mcphub automatically reconnects and retries if a session still expires).
 
 ---
 
@@ -350,7 +350,7 @@ Options:
   -h, --help              Display help for command
 
 Commands:
-  start [options]         Start the MCP Hub
+  start [options]         Start mcphub
     -p, --port <port>     Port number (default: 5431)
     --host <host>         Host to bind (default: 127.0.0.1)
     -d, --daemon          Run as daemon

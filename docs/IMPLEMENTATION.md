@@ -1,4 +1,4 @@
-# MCP Hub Implementation Plan
+# mcphub Implementation Plan
 
 ## Goal
 
@@ -396,7 +396,7 @@ export class McpHubServer {
     });
 
     httpServer.listen(port, () => {
-      console.log(`MCP Hub running on http://localhost:${port}/mcp`);
+      console.log(`mcphub running on http://localhost:${port}/mcp`);
     });
   }
 
@@ -426,12 +426,12 @@ const config = new ConfigManager();
 
 program
   .name("mcp-hub")
-  .description("MCP Hub - single gateway for all MCP servers")
+  .description("mcphub - single gateway for all MCP servers")
   .version("1.0.0");
 
 program
   .command("start")
-  .description("Start the MCP Hub")
+  .description("Start the mcphub")
   .option("-p, --port <port>", "Port number", parseInt)
   .option("-d, --daemon", "Run as daemon")
   .action(async (options) => {
@@ -609,7 +609,7 @@ program
   .command("status")
   .description("Show hub status")
   .action(() => {
-    console.log("MCP Hub Status:");
+    console.log("mcphub Status:");
     console.log(`Port: ${config.get().port}`);
     console.log("Backends:");
     manager.getStatus().forEach((s) => {

@@ -63,7 +63,7 @@ export class ToolAggregator {
       return await withTimeout(backend.getTools(), 30_000, label);
     } catch (e) {
       if (isSessionError(e)) {
-        console.error(`[mcphub] backend "${backend.getName()}": session error (${e instanceof Error ? e.message : String(e)}) — reconnecting before retrying tool list`);
+        console.error(`[mcphub] backend "${backend.getName()}": session error (${e instanceof Error ? e.message : String(e)}) - reconnecting before retrying tool list`);
         await backend.reconnect();
         return await withTimeout(backend.getTools(), 30_000, `${label} (retry)`);
       }
@@ -101,7 +101,7 @@ export class ToolAggregator {
       );
     } catch (e) {
       if (isSessionError(e)) {
-        console.error(`[mcphub] backend "${backendName}": session error (${e instanceof Error ? e.message : String(e)}) — reconnecting before retrying tool call`);
+        console.error(`[mcphub] backend "${backendName}": session error (${e instanceof Error ? e.message : String(e)}) - reconnecting before retrying tool call`);
         await backend.reconnect();
         return await withTimeout(
           backend.callTool(toolName, args),

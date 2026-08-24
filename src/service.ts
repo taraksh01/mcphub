@@ -103,7 +103,7 @@ function installLinux(config: ConfigManager, pinVersion = false, system = false)
     // System-wide: requires root. Runs as the invoking user via User=.
     const user = process.env.USER || "root";
     unit = `[Unit]
-Description=MCP Hub
+Description=mcphub
 After=network.target
 
 [Service]
@@ -124,7 +124,7 @@ WantedBy=multi-user.target
   } else {
     // Per-user: no root required. Runs in the user session.
     unit = `[Unit]
-Description=MCP Hub
+Description=mcphub
 After=network.target
 
 [Service]
