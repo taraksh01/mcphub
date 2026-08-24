@@ -213,7 +213,7 @@ export class McphubServer {
         if (process.send) {
           try { process.send({ type: "ready" } satisfies DaemonMessage); } catch {}
         }
-        console.log(`MCP Hub running on http://${host}:${port}/mcp`);
+        console.log(`mcphub running on http://${host}:${port}/mcp`);
         resolve();
       });
     }).then(() => {

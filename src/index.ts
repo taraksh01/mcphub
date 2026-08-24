@@ -183,13 +183,13 @@ const program = new Command();
 
 program
   .name("mcphub")
-  .description("mcphub — single gateway for all MCP servers")
+  .description("mcphub - single gateway for all MCP servers")
   .version(VERSION)
   .option("-c, --config <path>", "Config file path");
 
 program
   .command("start")
-  .description("Start the MCP Hub")
+  .description("Start mcphub")
   .option("-p, --port <port>", "Port number", parseInt)
   .option("--host <host>", "Host to bind (default 127.0.0.1)")
   .option("-d, --daemon", "Run as daemon")
@@ -424,9 +424,9 @@ program
       const disabledNote = server.enabled === false ? " [disabled]" : "";
       if (server.type === "stdio") {
         const envNote = server.env ? " (with env vars)" : "";
-        console.log(`${name}: stdio — ${server.command} ${(server.args ?? []).join(" ")}${envNote}${disabledNote}`);
+        console.log(`${name}: stdio - ${server.command} ${(server.args ?? []).join(" ")}${envNote}${disabledNote}`);
       } else {
-        console.log(`${name}: http — ${server.url}${disabledNote}`);
+        console.log(`${name}: http - ${server.url}${disabledNote}`);
       }
     }
   });
@@ -462,9 +462,9 @@ program
         const disabledNote = server.enabled === false ? " [disabled]" : "";
         if (server.type === "stdio") {
           const envNote = server.env ? " (with env vars)" : "";
-          console.log(`  ${name}: stdio — ${server.command} ${(server.args ?? []).join(" ")}${envNote}${disabledNote}`);
+          console.log(`  ${name}: stdio - ${server.command} ${(server.args ?? []).join(" ")}${envNote}${disabledNote}`);
         } else {
-          console.log(`  ${name}: http — ${server.url}${disabledNote}`);
+          console.log(`  ${name}: http - ${server.url}${disabledNote}`);
         }
       }
       try {

@@ -89,6 +89,10 @@ function installLinux(config: ConfigManager, pinVersion = false, system = false)
   const args = serviceArgs(config, pinVersion);
   const execStart = args.join(" ");
   const path = process.env.PATH || DEFAULT_PATH;
+  // Pass display-related env so GUI backends (chrome-devtools, playwright) can open windows.
+  // PassEnvironment pulls from the user manager's environment (imported via `systemctl --user import-environment`).
+  // This survives XAUTHORITY rotation unlike hard-coding at install time.
+  const DISPLAY_ENVS = "DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_SESSION_TYPE";
 
   let unit: string;
   let unitPath: string;
@@ -99,13 +103,14 @@ function installLinux(config: ConfigManager, pinVersion = false, system = false)
     // System-wide: requires root. Runs as the invoking user via User=.
     const user = process.env.USER || "root";
     unit = `[Unit]
-Description=MCP Hub
+Description=mcphub
 After=network.target
 
 [Service]
 Type=simple
 User=${user}
 Environment=PATH=${path}
+PassEnvironment=${DISPLAY_ENVS}
 ExecStart=${execStart}
 Restart=on-failure
 RestartSec=5
@@ -119,12 +124,13 @@ WantedBy=multi-user.target
   } else {
     // Per-user: no root required. Runs in the user session.
     unit = `[Unit]
-Description=MCP Hub
+Description=mcphub
 After=network.target
 
 [Service]
 Type=simple
 Environment=PATH=${path}
+PassEnvironment=${DISPLAY_ENVS}
 ExecStart=${execStart}
 Restart=on-failure
 RestartSec=5
@@ -147,6 +153,10 @@ WantedBy=default.target
       execSync(`${sudo}${startCmd}`, { stdio: "inherit" });
       console.log("System-wide systemd service installed.");
     } else {
+      // Import display env into the user manager so PassEnvironment can pick it up
+      try {
+        execSync(`systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_SESSION_TYPE`, { stdio: "ignore" });
+      } catch {}
       mkdirSync(dirname(unitPath), { recursive: true });
       writeFileSync(unitPath, unit);
       execSync(reloadCmd, { stdio: "ignore" });
