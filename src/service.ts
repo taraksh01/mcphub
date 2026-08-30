@@ -5,27 +5,40 @@ import { join, resolve, dirname } from "path";
 import { ConfigManager } from "./config.js";
 
 const LABEL = "com.mcphub";
-
 const DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
-/**
- * Get the pnpm bin path for auto-update mode.
- */
+function dedupePath(p: string): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const seg of p.split(":")) {
+    if (!seg || seen.has(seg)) continue;
+    seen.add(seg);
+    out.push(seg);
+  }
+  return out.join(":");
+}
+
+function getServicePath(): string {
+  const raw = process.env.PATH ? `${process.env.PATH}:${DEFAULT_PATH}` : DEFAULT_PATH;
+  return dedupePath(raw);
+}
+
+function buildRuntimeCmd(config: ConfigManager): string {
+  const cfg = config.get();
+  const port = cfg.port ?? 5431;
+  const args = ["start", "--port", String(port), "--config", config.getConfigPath()];
+  const quoted = args.map((a) => `"${a.replace(/"/g, '\\"')}"`).join(" ");
+  return `exec "$(command -v mcphub)" ${quoted}`;
+}
+
 function getPnpmBinPath(): string {
   return join(homedir(), ".local", "share", "pnpm", "bin", "mcphub");
 }
 
-/**
- * Get the script path for pin-version mode.
- */
 function getScriptPath(): string {
   return resolve(process.argv[1]);
 }
 
-/**
- * Resolve the node binary path at install time.
- * This ensures the service uses the correct node executable.
- */
 function nodeBin(): string {
   return process.execPath;
 }
@@ -33,15 +46,11 @@ function nodeBin(): string {
 function serviceArgs(config: ConfigManager, pinVersion = false): string[] {
   const cfg = config.get();
   const port = cfg.port ?? 5431;
-
   if (pinVersion) {
-    // Pin to exact version using node binary + script path
     const args = [nodeBin(), getScriptPath(), "start", "--port", String(port)];
     args.push("--config", config.getConfigPath());
     return args;
   }
-
-  // Default: use pnpm shim (auto-updates on version bump)
   const args = [getPnpmBinPath(), "start", "--port", String(port)];
   args.push("--config", config.getConfigPath());
   return args;
@@ -75,32 +84,21 @@ export function uninstallService(system = false): void {
   }
 }
 
-/**
- * Returns the "sudo " prefix when the current user is not root (POSIX only).
- * On Windows or when already root, returns an empty string so the same
- * command works without privilege escalation.
- */
 function sudoPrefix(): string {
   if (typeof process.getuid === "function" && process.getuid() === 0) return "";
   return "sudo ";
 }
 
 function installLinux(config: ConfigManager, pinVersion = false, system = false): void {
-  const args = serviceArgs(config, pinVersion);
-  const execStart = args.join(" ");
-  const path = process.env.PATH || DEFAULT_PATH;
-  // Pass display-related env so GUI backends (chrome-devtools, playwright) can open windows.
-  // PassEnvironment pulls from the user manager's environment (imported via `systemctl --user import-environment`).
-  // This survives XAUTHORITY rotation unlike hard-coding at install time.
+  const servicePath = getServicePath();
+  const execStart = pinVersion ? serviceArgs(config, true).join(" ") : `/bin/sh -c '${buildRuntimeCmd(config).replace(/'/g, "'\\''")}'`;
+  const path = servicePath;
   const DISPLAY_ENVS = "DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_SESSION_TYPE";
-
   let unit: string;
   let unitPath: string;
   let reloadCmd: string;
   let startCmd: string;
-
   if (system) {
-    // System-wide: requires root. Runs as the invoking user via User=.
     const user = process.env.USER || "root";
     unit = `[Unit]
 Description=mcphub
@@ -122,7 +120,6 @@ WantedBy=multi-user.target
     reloadCmd = "systemctl daemon-reload";
     startCmd = "systemctl enable --now mcphub";
   } else {
-    // Per-user: no root required. Runs in the user session.
     unit = `[Unit]
 Description=mcphub
 After=network.target
@@ -142,7 +139,6 @@ WantedBy=default.target
     reloadCmd = "systemctl --user daemon-reload";
     startCmd = "systemctl --user enable --now mcphub";
   }
-
   try {
     if (system) {
       const tmp = join(tmpdir(), "mcphub.service");
@@ -153,7 +149,6 @@ WantedBy=default.target
       execSync(`${sudo}${startCmd}`, { stdio: "inherit" });
       console.log("System-wide systemd service installed.");
     } else {
-      // Import display env into the user manager so PassEnvironment can pick it up
       try {
         execSync(`systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_SESSION_TYPE`, { stdio: "ignore" });
       } catch {}
@@ -170,14 +165,13 @@ WantedBy=default.target
 }
 
 function installMacOS(config: ConfigManager, pinVersion = false): void {
-  const args = serviceArgs(config, pinVersion);
-  // Ensure log directory exists
   const LOG_DIR = join(homedir(), "Library/Logs");
   const LOG_PATH = join(LOG_DIR, "mcphub.log");
   if (!existsSync(LOG_DIR)) {
     execSync(`mkdir -p "${LOG_DIR}"`, { stdio: "ignore" });
   }
-  const execCmd = args.join(" ");
+  const servicePath = getServicePath();
+  const execCmd = pinVersion ? serviceArgs(config, true).join(" ") : buildRuntimeCmd(config);
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -197,7 +191,7 @@ function installMacOS(config: ConfigManager, pinVersion = false): void {
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>${process.env.PATH || DEFAULT_PATH}</string>
+    <string>${servicePath}</string>
   </dict>
   <key>StandardOutPath</key>
   <string>${LOG_PATH}</string>
@@ -218,13 +212,22 @@ function installMacOS(config: ConfigManager, pinVersion = false): void {
 }
 
 function installWindows(config: ConfigManager, pinVersion = false): void {
-  const args = serviceArgs(config, pinVersion);
-  // Resolve mcphub at runtime via where so package updates are picked up.
-  // Each argument is double-quoted; the outer quotes are escaped as \" for schtasks.
-  const quotedArgs = args.map((a) => `"${a}"`).join(" ");
-  const inner = `for /f \\"delims=\\" %i in ('where mcphub 2^>nul') do @\\"%i\\" ${quotedArgs} & exit /b`;
-  const trArg = `cmd /c \\"${inner}\\"`;
-  const cmd = `schtasks /create /tn "${TASK_NAME}" /tr "${trArg}" /sc onstart /ru "%USERNAME%" /f`;
+  let trArg: string;
+  let cmd: string;
+  if (pinVersion) {
+    const args = serviceArgs(config, true);
+    const quotedArgs = args.map((a) => `"${a}"`).join(" ");
+    trArg = quotedArgs;
+    cmd = `schtasks /create /tn "${TASK_NAME}" /tr "${trArg}" /sc onstart /ru "%USERNAME%" /f`;
+  } else {
+    const cfg = config.get();
+    const port = cfg.port ?? 5431;
+    const startArgs = ["start", "--port", String(port), "--config", config.getConfigPath()];
+    const quotedArgs = startArgs.map((a) => `"${a}"`).join(" ");
+    const inner = `for /f \\"delims=\\" %i in ('where mcphub 2^>nul') do @\\"%i\\" ${quotedArgs} & exit /b`;
+    trArg = `cmd /c \\"${inner}\\"`;
+    cmd = `schtasks /create /tn "${TASK_NAME}" /tr "${trArg}" /sc onstart /ru "%USERNAME%" /f`;
+  }
   try {
     execSync(cmd, { stdio: "inherit" });
     console.log("Service installed (starts on next boot)");
