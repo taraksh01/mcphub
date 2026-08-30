@@ -1,3 +1,4 @@
+import { execSync } from "child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { McpServerConfig, IBackend, Json } from "../types.js";
@@ -45,6 +46,20 @@ export class StdioBackend implements IBackend {
     for (const key of Object.keys(process.env)) {
       const val = process.env[key];
       if (val !== undefined) env[key] = val;
+    }
+    if (process.platform === "linux") {
+      try {
+        const out = execSync("systemctl --user show-environment 2>/dev/null", { encoding: "utf-8" });
+        for (const line of out.split("\n")) {
+          const eq = line.indexOf("=");
+          if (eq === -1) continue;
+          const k = line.slice(0, eq);
+          const v = line.slice(eq + 1);
+          if (v && ["DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE"].includes(k)) {
+            env[k] = v;
+          }
+        }
+      } catch {}
     }
     Object.assign(env, this.config.env);
     return env;

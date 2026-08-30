@@ -1,3 +1,4 @@
+import { execSync } from "child_process";
 import { McpServerConfig, IBackend } from "../types.js";
 import { StdioBackend } from "./stdio.js";
 import { HttpBackend } from "./http.js";
@@ -24,10 +25,65 @@ export class McpClientManager {
   private retryTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private retryAttempts: Map<string, number> = new Map();
   private static readonly RETRY_DELAYS_MS = [5000, 10000, 20000];
+  private displayWatcher?: ReturnType<typeof setInterval>;
+  private hadDisplay = false;
+  private watchedServers: Record<string, McpServerConfig> = {};
+
+  private hasDisplay(): boolean {
+    if (process.platform !== "linux") return !!process.env.DISPLAY || !!process.env.WAYLAND_DISPLAY;
+    try {
+      const out = execSync("systemctl --user show-environment 2>/dev/null", { encoding: "utf-8" });
+      return out.split("\n").some((l) => (l.startsWith("DISPLAY=") && !!l.split("=")[1]) || (l.startsWith("WAYLAND_DISPLAY=") && !!l.split("=")[1]));
+    } catch {
+      return !!process.env.DISPLAY || !!process.env.WAYLAND_DISPLAY;
+    }
+  }
+
+  private startDisplayWatcher(): void {
+    if (process.platform !== "linux" || this.displayWatcher) return;
+    this.hadDisplay = this.hasDisplay();
+    this.displayWatcher = setInterval(async () => {
+      const now = this.hasDisplay();
+      if (!this.hadDisplay && now) {
+        this.hadDisplay = true;
+        for (const [name, cfg] of Object.entries(this.watchedServers)) {
+          if (cfg.enabled === false || cfg.type !== "stdio") continue;
+          if (!["chrome-devtools", "playwright", "agent-browser", "open-design", "chrome"].some((k) => name.includes(k))) continue;
+          const existing = this.backends.get(name);
+          if (!existing) continue;
+          try { await existing.disconnect(); } catch {}
+          this.backends.delete(name);
+          try {
+            const backend = this.createBackend(name, cfg);
+            await backend.connect();
+            this.attachDeathHook(name, backend, cfg);
+            this.backends.set(name, backend);
+            this.failures.delete(name);
+            console.log(`[mcphub] display available, reconnected "${name}" headed`);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            this.failures.set(name, { type: "stdio", error: msg });
+            this.scheduleRetry(name, cfg);
+          }
+        }
+      } else if (this.hadDisplay && !now) {
+        this.hadDisplay = now;
+      }
+    }, 10000);
+    if (this.displayWatcher.unref) this.displayWatcher.unref();
+  }
+
+  private stopDisplayWatcher(): void {
+    if (this.displayWatcher) { clearInterval(this.displayWatcher); this.displayWatcher = undefined; }
+  }
 
   async connectAll(servers: Record<string, McpServerConfig>): Promise<void> {
     const entries = Object.entries(servers);
-    if (entries.length === 0) return;
+    if (entries.length === 0) {
+      this.watchedServers = { ...servers };
+      this.startDisplayWatcher();
+      return;
+    }
 
     const results = await Promise.allSettled(
       entries.map(async ([name, config]) => {
@@ -53,6 +109,8 @@ export class McpClientManager {
         this.scheduleRetry(entries[i][0], entries[i][1]);
       }
     }
+    this.watchedServers = { ...servers };
+    this.startDisplayWatcher();
   }
 
   private scheduleRetry(name: string, config: McpServerConfig): void {
@@ -94,6 +152,8 @@ export class McpClientManager {
   }
 
   async disconnectAll(): Promise<void> {
+    this.stopDisplayWatcher();
+    this.watchedServers = {};
     for (const timer of this.retryTimers.values()) {
       clearTimeout(timer);
     }
@@ -175,6 +235,7 @@ if (oldServer && deepEqual(oldServer, newServer)) continue;
         this.scheduleRetry(name, newServer);
       }
     }
+    this.watchedServers = { ...newServers };
   }
 
   getBackend(name: string): IBackend | undefined {
