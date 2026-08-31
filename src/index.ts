@@ -525,19 +525,23 @@ program
   .command("install-service")
   .description("Install as a boot-time service (systemd/launchd/schtasks)")
   .option("--pin-version", "Pin to exact version (won't auto-update on version bump)")
-  .option("--system", "Install system-wide (requires sudo); default is per-user")
+  .option("--system", "Install system-wide (requires sudo); default is system-wide")
+  .option("--user", "Install as per-user service (no sudo)")
   .action((options) => {
     config = new ConfigManager(program.opts().config);
-    installService(config, options.pinVersion, options.system);
+    const system = options.user ? false : true;
+    installService(config, options.pinVersion, system);
   });
 
 program
   .command("uninstall-service")
   .description("Remove the boot-time service")
-  .option("--system", "Uninstall the system-wide service (requires sudo)")
+  .option("--system", "Uninstall the system-wide service (requires sudo); default is system-wide")
+  .option("--user", "Uninstall the per-user service")
   .action((options) => {
     config = new ConfigManager(program.opts().config);
-    uninstallService(options.system);
+    const system = options.user ? false : true;
+    uninstallService(system);
   });
 
 program.parse();

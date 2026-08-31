@@ -56,7 +56,7 @@ function serviceArgs(config: ConfigManager, pinVersion = false): string[] {
   return args;
 }
 
-export function installService(config: ConfigManager, pinVersion = false, system = false): void {
+export function installService(config: ConfigManager, pinVersion = false, system = true): void {
   const plat = platform();
   if (plat === "linux") {
     installLinux(config, pinVersion, system);
@@ -70,7 +70,7 @@ export function installService(config: ConfigManager, pinVersion = false, system
   }
 }
 
-export function uninstallService(system = false): void {
+export function uninstallService(system = true): void {
   const plat = platform();
   if (plat === "linux") {
     uninstallLinux(system);
@@ -89,7 +89,7 @@ function sudoPrefix(): string {
   return "sudo ";
 }
 
-function installLinux(config: ConfigManager, pinVersion = false, system = false): void {
+function installLinux(config: ConfigManager, pinVersion = false, system = true): void {
   const servicePath = getServicePath();
   const execStart = pinVersion ? serviceArgs(config, true).join(" ") : `/bin/sh -c '${buildRuntimeCmd(config).replace(/'/g, "'\\''")}'`;
   const path = servicePath;
@@ -147,7 +147,14 @@ WantedBy=default.target
       execSync(`${sudo}cp "${tmp}" "${unitPath}"`, { stdio: "ignore" });
       execSync(`${sudo}${reloadCmd}`, { stdio: "ignore" });
       execSync(`${sudo}${startCmd}`, { stdio: "inherit" });
-      console.log("System-wide systemd service installed.");
+      console.log("System-wide systemd service installed (starts at boot).");
+      const userUnit = join(homedir(), ".config", "systemd", "user", "mcphub.service");
+      if (existsSync(userUnit)) {
+        try {
+          execSync(`systemctl --user stop mcphub 2>/dev/null; systemctl --user disable mcphub 2>/dev/null; rm -f "${userUnit}"; systemctl --user daemon-reload 2>/dev/null`, { stdio: "ignore" });
+          console.log("Removed existing per-user service.");
+        } catch {}
+      }
     } else {
       try {
         execSync(`systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_SESSION_TYPE`, { stdio: "ignore" });
@@ -158,6 +165,14 @@ WantedBy=default.target
       execSync(startCmd, { stdio: "inherit" });
       console.log("User systemd service installed.");
       console.log("Starts at login. For boot-without-login: loginctl enable-linger $USER");
+      const sysUnit = "/etc/systemd/system/mcphub.service";
+      if (existsSync(sysUnit)) {
+        try {
+          const sudo = sudoPrefix();
+          execSync(`${sudo}systemctl stop mcphub 2>/dev/null; ${sudo}systemctl disable mcphub 2>/dev/null; ${sudo}rm -f ${sysUnit}; ${sudo}systemctl daemon-reload 2>/dev/null`, { stdio: "ignore" });
+          console.log("Removed existing system-wide service.");
+        } catch {}
+      }
     }
   } catch {
     console.error(`Could not install systemd service${system ? " (try running with sudo)" : ""}.`);
@@ -240,7 +255,7 @@ function installWindows(config: ConfigManager, pinVersion = false): void {
 
 const TASK_NAME = "MCPHub";
 
-function uninstallLinux(system = false): void {
+function uninstallLinux(system = true): void {
   const sudo = sudoPrefix();
   if (system) {
     const cmd = `${sudo}systemctl stop mcphub 2>/dev/null; ${sudo}systemctl disable mcphub 2>/dev/null; ${sudo}rm -f /etc/systemd/system/mcphub.service; ${sudo}systemctl daemon-reload`;
