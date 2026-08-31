@@ -87,7 +87,8 @@ export class McphubServer {
           res.end();
           return;
         }
-        if (req.method === "GET" && req.url === "/health") {
+        const parsedUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+        if (req.method === "GET" && parsedUrl.pathname === "/health") {
           const failures = this.manager.getFailures();
           const body: { status: string; failures: typeof failures } = { status: "ok", failures };
           if (failures.length > 0) body.failures = failures;
@@ -96,7 +97,7 @@ export class McphubServer {
           return;
         }
 
-        if (req.url === "/mcp") {
+        if (parsedUrl.pathname === "/mcp" || parsedUrl.pathname === "/mcp/") {
           try {
             const sessionId = typeof req.headers["mcp-session-id"] === "string"
               ? req.headers["mcp-session-id"]
